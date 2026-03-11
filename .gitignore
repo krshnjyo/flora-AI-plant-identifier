@@ -1,0 +1,16 @@
+node_modules
+.next
+out
+dist
+.env.local
+.env
+*.log
+.DS_Store
+**/tsconfig.tsbuildinfo
+backend/public/uploads/*
+!backend/public/uploads/.gitkeep
+plant_ai/venv/
+plant_ai/dataset/
+plant_ai/test_images/
+plant_ai/__pycache__/
+plant_ai/model_service/__pycache__/

@@ -1,0 +1,47 @@
+{
+  "plant_id": 1,
+  "common_name": "Potato",
+  "scientific_name": "Solanum tuberosum",
+  "species": "S. tuberosum",
+  "family": "Solanaceae",
+  "image_url": "/plants/potato-dataset.jpg",
+  "plant_description": "The potato is a starchy tuber crop grown for edible underground storage organs.",
+  "growth_conditions": {
+    "soil_requirements": "Loose, well-drained loamy soil with pH 5.0-6.5",
+    "water_requirements": "Consistent moisture with no long dry intervals",
+    "sunlight_requirements": "Full sun for 6-8 hours daily",
+    "temperature_conditions": "Optimal growth between 15 and 21 degrees Celsius"
+  },
+  "watering_schedule": {
+    "frequency": "Every 2-3 days in warm periods, weekly in cooler periods",
+    "chart_data": [
+      { "day": "Monday", "water": true },
+      { "day": "Tuesday", "water": false },
+      { "day": "Wednesday", "water": true },
+      { "day": "Thursday", "water": false },
+      { "day": "Friday", "water": true },
+      { "day": "Saturday", "water": false },
+      { "day": "Sunday", "water": false }
+    ]
+  },
+  "growth_metrics": {
+    "average_height_cm": 75,
+    "growth_rate": "Moderate",
+    "chart_data": {
+      "labels": ["Month 1", "Month 2", "Month 3", "Month 4", "Month 5"],
+      "values": [30, 42, 55, 66, 75]
+    }
+  },
+  "disease_risk_levels": {
+    "labels": ["Late Blight", "Early Blight", "Bacterial Spot"],
+    "values": [85, 78, 12]
+  },
+  "care_indicators": {
+    "water_need_level": 72,
+    "sunlight_need_level": 84,
+    "maintenance_level": 74
+  },
+  "common_diseases": ["Late Blight", "Early Blight"],
+  "toxicity_information": "Leaves, stems, and sprouts may contain solanine and should not be consumed.",
+  "confidence_score": 95.8
+}

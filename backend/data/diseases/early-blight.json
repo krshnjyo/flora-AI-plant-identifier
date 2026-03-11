@@ -1,0 +1,20 @@
+{
+  "disease_name": "Early Blight",
+  "affected_species": "Potato, Tomato",
+  "image_url": "/diseases/early-blight-dataset.jpg",
+  "disease_category": "Fungal blight",
+  "pathogen_type": "Alternaria species",
+  "affected_parts": "Older leaves, stems, and sometimes fruits/tubers",
+  "favorable_conditions": "Warm temperatures with repeated leaf wetness and humidity.",
+  "diagnosis_notes": "Dark concentric lesions on older leaves with surrounding yellowing are common indicators.",
+  "disease_description": "Early Blight is a foliar fungal disease that can reduce canopy health and final yield if unmanaged.",
+  "symptoms": "Brown to dark lesions with ring patterns, progressive chlorosis, and lower canopy decline.",
+  "causes": "The disease is typically caused by Alternaria pathogens surviving in debris, volunteer plants, and infected seed material.",
+  "prevention_methods": "Use clean planting material, remove infected debris, rotate crops, and reduce prolonged leaf wetness.",
+  "treatment_methods": "Prune heavily affected tissue and apply crop-approved fungicide programs with resistance rotation.",
+  "treatment_organic": "Mulch soil, improve airflow, and use copper/sulfur-based products where permitted.",
+  "treatment_chemical": "Use contact and systemic fungicides per crop label and local extension guidance.",
+  "recovery_time": "2-4 weeks if intervention starts before severe canopy collapse.",
+  "monitoring_tips": "Inspect lower leaves first and track lesion spread weekly.",
+  "severity_level": "Medium"
+}

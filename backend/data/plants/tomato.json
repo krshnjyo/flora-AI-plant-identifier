@@ -1,0 +1,47 @@
+{
+  "plant_id": 2,
+  "common_name": "Tomato",
+  "scientific_name": "Solanum lycopersicum",
+  "species": "S. lycopersicum",
+  "family": "Solanaceae",
+  "image_url": "/plants/tomato-dataset.jpg",
+  "plant_description": "Tomato is a warm-season crop grown for edible berry-like fruits used across cuisines.",
+  "growth_conditions": {
+    "soil_requirements": "Well-draining, nutrient-rich soil with pH 6.2-6.8",
+    "water_requirements": "Consistent deep watering with reduced leaf wetness",
+    "sunlight_requirements": "Full sun for 6-8 hours daily",
+    "temperature_conditions": "Optimal growth between 21 and 26 degrees Celsius"
+  },
+  "watering_schedule": {
+    "frequency": "Every 2-3 days in warm periods, weekly in cooler periods",
+    "chart_data": [
+      { "day": "Monday", "water": true },
+      { "day": "Tuesday", "water": false },
+      { "day": "Wednesday", "water": true },
+      { "day": "Thursday", "water": false },
+      { "day": "Friday", "water": true },
+      { "day": "Saturday", "water": false },
+      { "day": "Sunday", "water": false }
+    ]
+  },
+  "growth_metrics": {
+    "average_height_cm": 100,
+    "growth_rate": "Fast",
+    "chart_data": {
+      "labels": ["Month 1", "Month 2", "Month 3", "Month 4", "Month 5"],
+      "values": [20, 38, 57, 79, 100]
+    }
+  },
+  "disease_risk_levels": {
+    "labels": ["Late Blight", "Early Blight", "Bacterial Spot"],
+    "values": [92, 82, 76]
+  },
+  "care_indicators": {
+    "water_need_level": 72,
+    "sunlight_need_level": 87,
+    "maintenance_level": 78
+  },
+  "common_diseases": ["Late Blight", "Early Blight", "Bacterial Spot"],
+  "toxicity_information": "Leaves, stems, and green unripe fruit tissues can contain solanine-like alkaloids.",
+  "confidence_score": 96.4
+}

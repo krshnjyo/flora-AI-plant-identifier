@@ -1,0 +1,222 @@
+/*
+ * File: frontend/app/globals.css
+ * Purpose: Global style layer used by the frontend application shell.
+ *
+ * Responsibilities:
+ * - Defines baseline tokens, layout constraints, and cross-page utility styles
+ * - Controls responsive and motion behavior defaults
+ *
+ * Design Notes:
+ * - Global styles are intentionally minimal to avoid component-level conflicts
+ */
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --background: #f4f5f4;
+  --foreground: #18181b;
+  --frame-border: #e4e4e7;
+  --primary: #18181b;
+  --glass: rgba(255, 255, 255, 0.75);
+  --glass-border: rgba(0, 0, 0, 0.08);
+  --font-body: "SF Pro Text", "Helvetica Neue", Helvetica, Arial, sans-serif;
+  --font-display: "SF Pro Display", "Helvetica Neue", Helvetica, Arial, sans-serif;
+  --motion-fast: 180ms;
+  --motion-base: 280ms;
+  --motion-slow: 520ms;
+  --motion-ease: cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+::selection {
+  background-color: var(--foreground);
+  color: var(--background);
+}
+
+* {
+  border-color: var(--frame-border);
+}
+
+html,
+body {
+  height: 100%;
+  overscroll-behavior: none;
+}
+
+html {
+  font-size: 16px;
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+}
+
+body {
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+  color: var(--foreground);
+  background-color: var(--background);
+  font-family: -apple-system, BlinkMacSystemFont, var(--font-body);
+  letter-spacing: -0.015em;
+  -webkit-font-smoothing: antialiased;
+  padding: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+}
+
+body.home-locked {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  height: 100dvh;
+  overflow: hidden;
+}
+
+html.home-locked-html {
+  height: 100dvh;
+  overflow: hidden;
+}
+
+body.home-locked>main {
+  min-height: 0;
+  overflow: hidden;
+}
+
+body > main {
+  min-height: 0;
+}
+
+:where(a, button, [role="button"], input, select, textarea, summary):focus-visible {
+  outline: 2px solid rgba(24, 24, 27, 0.65);
+  outline-offset: 2px;
+}
+
+.app-frame {
+  position: relative;
+  width: 100%;
+  min-height: 100vh;
+  background: #ffffff;
+}
+
+h1,
+h2,
+h3,
+h4,
+h5,
+h6 {
+  font-family: -apple-system, BlinkMacSystemFont, var(--font-display);
+  letter-spacing: -0.03em;
+  font-weight: 550;
+}
+
+.editorial-grid {
+  display: grid;
+  grid-template-columns: repeat(12, 1fr);
+  gap: 1rem;
+}
+
+.text-editorial {
+  font-size: clamp(3rem, 7vw, 7rem);
+  line-height: 0.85;
+  letter-spacing: -0.04em;
+  font-weight: 600;
+}
+
+.glass-panel {
+  background: var(--glass);
+  backdrop-filter: blur(16px);
+  border: 1px solid var(--glass-border);
+  box-shadow: 0 16px 40px rgba(24, 24, 27, 0.06);
+}
+
+.card-hover {
+  transition: transform var(--motion-base) var(--motion-ease), box-shadow var(--motion-base) var(--motion-ease),
+    border-color var(--motion-fast) var(--motion-ease);
+}
+
+.card-hover:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 20px 45px rgba(24, 24, 27, 0.12);
+}
+
+.upload-zone {
+  border: 1px dashed #d4d4d8;
+  background: #fafafa;
+  color: #71717a;
+  transition: border-color var(--motion-fast) var(--motion-ease), background-color var(--motion-fast) var(--motion-ease),
+    color var(--motion-fast) var(--motion-ease);
+}
+
+.upload-zone:hover,
+.upload-zone.active {
+  border-color: #18181b;
+  background: #ffffff;
+  color: #18181b;
+}
+
+.floating-chip {
+  border: 1px solid #e4e4e7;
+  background: #ffffff;
+  color: #52525b;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.scan-loader {
+  display: inline-block;
+  width: 0.85rem;
+  height: 0.85rem;
+  border-radius: 9999px;
+  border: 2px solid rgba(113, 113, 122, 0.35);
+  border-top-color: #18181b;
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes fade-in-up {
+  from {
+    opacity: 0;
+    transform: translateY(16px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-fade-in-up {
+  animation: fade-in-up 0.8s ease forwards;
+}
+
+.grid-surface {
+  position: relative;
+  background: #f4f5f4;
+}
+
+.grid-surface::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0;
+  background-image: none;
+  background-size: auto;
+}
+
+@media (prefers-reduced-motion: reduce) {
+
+  *,
+  *::before,
+  *::after {
+    animation-duration: 1ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 1ms !important;
+    scroll-behavior: auto !important;
+  }
+}

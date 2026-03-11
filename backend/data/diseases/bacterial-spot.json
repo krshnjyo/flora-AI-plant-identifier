@@ -1,0 +1,20 @@
+{
+  "disease_name": "Bacterial Spot",
+  "affected_species": "Pepper, Tomato",
+  "image_url": "/diseases/bacterial-spot-dataset.jpg",
+  "disease_category": "Bacterial leaf and fruit spot",
+  "pathogen_type": "Xanthomonas species complex",
+  "affected_parts": "Leaves, stems, and fruits",
+  "favorable_conditions": "Warm temperatures, high humidity, rainfall splash, and overhead irrigation.",
+  "diagnosis_notes": "Small dark lesions with yellow halos on leaves, with raised scabby fruit spots in advanced stages.",
+  "disease_description": "Bacterial Spot is a contagious bacterial disease that weakens foliage and reduces fruit quality.",
+  "symptoms": "Dark angular to irregular leaf spots, yellowing around lesions, shot-hole appearance, and fruit blemishes.",
+  "causes": "Often introduced through contaminated seed/transplants and spread by splashing water and field handling.",
+  "prevention_methods": "Use certified clean seed, avoid overhead irrigation, disinfect tools, and rotate away from host crops.",
+  "treatment_methods": "Remove heavily infected tissue and apply crop-approved bactericide programs guided by local recommendations.",
+  "treatment_organic": "Sanitation pruning, drip irrigation, mulch splash barriers, and copper-based organic options.",
+  "treatment_chemical": "Copper + partner bactericide rotations according to crop label and resistance guidance.",
+  "recovery_time": "Leaf recovery is limited; focus is on containing spread and protecting new growth.",
+  "monitoring_tips": "Track new leaf infections after rainfall and inspect fruit lesions twice weekly.",
+  "severity_level": "Medium"
+}

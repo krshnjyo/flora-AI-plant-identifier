@@ -1,0 +1,47 @@
+{
+  "plant_id": 3,
+  "common_name": "Pepper",
+  "scientific_name": "Capsicum annuum",
+  "species": "C. annuum",
+  "family": "Solanaceae",
+  "image_url": "/gallery-result/plants/pepperbell.png",
+  "plant_description": "Bell pepper is a warm-season crop valued for thick-walled fruits and high vitamin content.",
+  "growth_conditions": {
+    "soil_requirements": "Well-drained loamy soil with pH 6.0-6.8",
+    "water_requirements": "Regular moisture without prolonged saturation",
+    "sunlight_requirements": "Full sun for at least 6 hours daily",
+    "temperature_conditions": "Optimal growth between 20 and 30 degrees Celsius"
+  },
+  "watering_schedule": {
+    "frequency": "Every 2-3 days in heat, weekly during cooler spells",
+    "chart_data": [
+      { "day": "Monday", "water": true },
+      { "day": "Tuesday", "water": false },
+      { "day": "Wednesday", "water": true },
+      { "day": "Thursday", "water": false },
+      { "day": "Friday", "water": true },
+      { "day": "Saturday", "water": false },
+      { "day": "Sunday", "water": false }
+    ]
+  },
+  "growth_metrics": {
+    "average_height_cm": 70,
+    "growth_rate": "Moderate",
+    "chart_data": {
+      "labels": ["Month 1", "Month 2", "Month 3", "Month 4", "Month 5"],
+      "values": [18, 33, 47, 60, 70]
+    }
+  },
+  "disease_risk_levels": {
+    "labels": ["Bacterial Spot", "Early Blight", "Late Blight"],
+    "values": [86, 8, 6]
+  },
+  "care_indicators": {
+    "water_need_level": 68,
+    "sunlight_need_level": 84,
+    "maintenance_level": 72
+  },
+  "common_diseases": ["Bacterial Spot"],
+  "toxicity_information": "Leaves and stems are not typically consumed; keep non-edible plant tissue away from pets.",
+  "confidence_score": 95.1
+}

@@ -1,0 +1,20 @@
+{
+  "disease_name": "Late Blight",
+  "affected_species": "Potato, Tomato",
+  "image_url": "/diseases/late-blight-dataset.jpg",
+  "disease_category": "Oomycete blight",
+  "pathogen_type": "Phytophthora infestans",
+  "affected_parts": "Leaves, stems, petioles, and tubers",
+  "favorable_conditions": "Cool, humid weather with long wetness periods and poor air circulation.",
+  "diagnosis_notes": "Rapidly expanding water-soaked lesions that darken quickly, often with pale margins and sporulation under humidity.",
+  "disease_description": "Late Blight can spread quickly and cause severe crop losses without rapid intervention.",
+  "symptoms": "Water-soaked patches, dark necrotic lesions, stem infection, and rapid canopy collapse in conducive weather.",
+  "causes": "Infection by Phytophthora infestans spores distributed through wind, rain splash, and infected plant material.",
+  "prevention_methods": "Use resistant cultivars when available, eliminate infected volunteers, and keep canopy dry where possible.",
+  "treatment_methods": "Remove high-pressure infection zones and begin anti-oomycete spray programs immediately.",
+  "treatment_organic": "Sanitation, spacing, and rapid removal of infected tissue to reduce inoculum pressure.",
+  "treatment_chemical": "Use targeted anti-oomycete chemistry with strict resistance-management rotation.",
+  "recovery_time": "Control window is short; recovery depends on how early spread is contained.",
+  "monitoring_tips": "Scout daily during cool humid periods and isolate first hotspots immediately.",
+  "severity_level": "High"
+}
