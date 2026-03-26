@@ -4,20 +4,28 @@
   "scientific_name": "Solanum lycopersicum",
   "species": "S. lycopersicum",
   "family": "Solanaceae",
-  "image_url": "/plants/tomato-dataset.jpg",
+  "image_url": "/gallery-result/plants/tom1.jpg",
+  "media": {
+    "gallery_images": [
+      "/gallery-result/plants/tom1.jpg",
+      "/gallery-result/plants/tom2.jpg",
+      "/gallery-result/plants/tom3.jpg"
+    ],
+    "video_src": "/placeholder.mp4"
+  },
   "plant_description": "Tomato is a warm-season crop grown for edible berry-like fruits used across cuisines.",
   "growth_conditions": {
-    "soil_requirements": "Well-draining, nutrient-rich soil with pH 6.2-6.8",
-    "water_requirements": "Consistent deep watering with reduced leaf wetness",
+    "soil_requirements": "Well-drained soil with pH 5.5-7.0 and added organic matter",
+    "water_requirements": "Keep soil evenly moist with deep watering at the base and minimal leaf wetness",
     "sunlight_requirements": "Full sun for 6-8 hours daily",
     "temperature_conditions": "Optimal growth between 21 and 26 degrees Celsius"
   },
   "watering_schedule": {
-    "frequency": "Every 2-3 days in warm periods, weekly in cooler periods",
+    "frequency": "Deep watering once or twice weekly, more often in sandy soil or hot weather",
     "chart_data": [
       { "day": "Monday", "water": true },
       { "day": "Tuesday", "water": false },
-      { "day": "Wednesday", "water": true },
+      { "day": "Wednesday", "water": false },
       { "day": "Thursday", "water": false },
       { "day": "Friday", "water": true },
       { "day": "Saturday", "water": false },

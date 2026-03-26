@@ -19,6 +19,12 @@ export const plantResultJsonSchema = z.object({
   species: z.string(),
   family: z.string(),
   image_url: z.string().nullable().optional(),
+  media: z
+    .object({
+      gallery_images: z.array(z.string()).default([]),
+      video_src: z.string().nullable().optional()
+    })
+    .optional(),
   plant_description: z.string(),
   growth_conditions: z.object({
     soil_requirements: z.string(),

@@ -1,7 +1,14 @@
 {
   "disease_name": "Early Blight",
   "affected_species": "Potato, Tomato",
-  "image_url": "/diseases/early-blight-dataset.jpg",
+  "image_url": "/gallery-result/diseases/early1.png",
+  "media": {
+    "gallery_images": [
+      "/gallery-result/diseases/early1.png",
+      "/gallery-result/diseases/early2.jpeg"
+    ],
+    "video_src": "/placeholder.mp4"
+  },
   "disease_category": "Fungal blight",
   "pathogen_type": "Alternaria species",
   "affected_parts": "Older leaves, stems, and sometimes fruits/tubers",

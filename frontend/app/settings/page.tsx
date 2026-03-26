@@ -9,7 +9,10 @@ import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import Image from "next/image";
 import { motion } from "framer-motion";
 import { Camera, Save, ShieldCheck } from "lucide-react";
-import { apiFetch, apiFetchJson, getApiErrorMessage, toAssetUrl } from "@/lib/api-client";
+import { CenteredPageHero } from "@/components/layout/showcase-shell";
+import { WorkspaceExpander } from "@/components/layout/workspace-expander";
+import { type WorkspaceButtonTone } from "@/components/layout/workspace-button";
+import { apiFetch, apiFetchJson, getApiErrorMessage, notifyAuthChanged, toAssetUrl } from "@/lib/api-client";
 import { useHomeLocked } from "@/lib/use-home-locked";
 
 type OutputMode = "smart" | "species" | "disease";
@@ -36,6 +39,8 @@ type ProfilePayload = {
   avatarUrl: string;
   preferences?: Partial<SettingsPreferences>;
 };
+
+type SettingsPanelKey = "profile" | "avatar" | "password" | "output" | "notifications" | "security";
 
 const LOCAL_PREF_KEY = "flora-settings-v1";
 
@@ -141,6 +146,7 @@ export default function SettingsPage() {
   const [confirmPassword, setConfirmPassword] = useState("");
 
   const [preferences, setPreferences] = useState<SettingsPreferences>(defaultPreferences);
+  const [selectedPanelKey, setSelectedPanelKey] = useState<SettingsPanelKey | "">("");
 
   useHomeLocked();
 
@@ -184,6 +190,351 @@ export default function SettingsPage() {
   }, []);
 
   const avatarSrc = useMemo(() => toAssetUrl(profile?.avatarUrl || ""), [profile?.avatarUrl]);
+  const notificationState = preferences.scanNotifications || preferences.emailNotifications || preferences.incidentAlerts ? "On" : "Off";
+  const panelButtons: Array<{
+    key: SettingsPanelKey;
+    label: string;
+    title: string;
+    description: string;
+    tone?: WorkspaceButtonTone;
+  }> = [
+    {
+      key: "profile",
+      label: "Identity",
+      title: "Profile Details",
+      description: `${fullName || "Account name"} · ${email || "Email address"}`
+    },
+    {
+      key: "avatar",
+      label: "Visual",
+      title: "Profile Picture",
+      description: avatarSrc ? "Avatar active for account surfaces." : "No avatar uploaded yet."
+    },
+    {
+      key: "password",
+      label: "Access",
+      title: "Password Controls",
+      description: "Update the active sign-in credential.",
+      tone: "danger"
+    },
+    {
+      key: "output",
+      label: "Output",
+      title: "Result Defaults",
+      description: `${preferences.defaultOutput.toUpperCase()} mode with fallback ${preferences.allowModelFallback ? "on" : "off"}.`,
+      tone: "accent"
+    },
+    {
+      key: "notifications",
+      label: "Alerts",
+      title: "Notifications",
+      description: `${notificationState} across scan, email, and incident channels.`,
+      tone: "accent"
+    },
+    {
+      key: "security",
+      label: "Security",
+      title: "Retention + 2FA",
+      description: `${preferences.auditRetentionDays} day retention · ${preferences.twoFactorEnabled ? "2FA enabled" : "2FA disabled"}.`
+    }
+  ];
+
+  const renderSettingsPanel = () => {
+    switch (selectedPanelKey || "profile") {
+      case "profile":
+        return (
+          <div className="grid gap-6 xl:grid-cols-[minmax(0,1.06fr)_minmax(17rem,0.94fr)]">
+            <form className="grid gap-3" onSubmit={saveProfile}>
+              <input
+                value={fullName}
+                onChange={(event) => setFullName(event.target.value)}
+                placeholder="Full name"
+                required
+                className="h-11 rounded-2xl border border-zinc-300 bg-white px-3 text-sm text-zinc-900 outline-none transition-colors focus:border-zinc-900"
+              />
+              <input
+                value={email}
+                onChange={(event) => setEmail(event.target.value)}
+                placeholder="Email"
+                type="email"
+                required
+                className="h-11 rounded-2xl border border-zinc-300 bg-white px-3 text-sm text-zinc-900 outline-none transition-colors focus:border-zinc-900"
+              />
+              <textarea
+                value={bio}
+                onChange={(event) => setBio(event.target.value)}
+                placeholder="Bio"
+                rows={5}
+                className="rounded-[22px] border border-zinc-300 bg-white px-3 py-3 text-sm text-zinc-900 outline-none transition-colors focus:border-zinc-900"
+              />
+              <button
+                type="submit"
+                disabled={savingProfile}
+                className="inline-flex h-11 items-center justify-center gap-2 rounded-full bg-zinc-900 px-5 font-mono text-xs uppercase tracking-[0.16em] text-white transition-colors hover:bg-black disabled:opacity-60"
+              >
+                <Save className="h-3.5 w-3.5" />
+                {savingProfile ? "Saving..." : "Save Profile"}
+              </button>
+            </form>
+
+            <div className="space-y-4">
+              <article className="rounded-[24px] border border-zinc-900/10 bg-zinc-50/85 p-4">
+                <p className="font-mono text-[10px] uppercase tracking-[0.18em] text-zinc-500">Current Identity</p>
+                <p className="mt-3 text-2xl font-semibold tracking-[-0.04em] text-zinc-950">{profile?.fullName || "User"}</p>
+                <p className="mt-2 text-sm text-zinc-600">{profile?.email || ""}</p>
+                <p className="mt-3 text-sm leading-relaxed text-zinc-600">{bio || "Add a short account bio to annotate your workspace."}</p>
+              </article>
+              <article className="rounded-[24px] border border-zinc-900/10 bg-zinc-50/85 p-4">
+                <p className="font-mono text-[10px] uppercase tracking-[0.18em] text-zinc-500">Account Status</p>
+                <div className="mt-3 flex flex-wrap gap-2">
+                  <span className="rounded-full border border-zinc-900/12 bg-white px-3 py-1.5 text-xs font-medium uppercase text-zinc-900">
+                    {profile?.role || "user"}
+                  </span>
+                  <span className="rounded-full border border-zinc-900/12 bg-white px-3 py-1.5 text-xs font-medium uppercase text-zinc-900">
+                    {profile?.accountStatus || "active"}
+                  </span>
+                </div>
+              </article>
+            </div>
+          </div>
+        );
+      case "avatar":
+        return (
+          <div className="grid gap-6 xl:grid-cols-[minmax(0,15rem)_minmax(0,1fr)]">
+            <div className="flex flex-col items-center justify-center rounded-[28px] border border-zinc-900/10 bg-zinc-50/85 p-5">
+              <div className="relative h-32 w-32 overflow-hidden rounded-full border border-zinc-900/10 bg-white">
+                {avatarSrc ? (
+                  <Image src={avatarSrc} alt="Profile avatar" fill sizes="128px" className="object-cover" />
+                ) : (
+                  <div className="grid h-full w-full place-items-center text-zinc-400">
+                    <Camera className="h-8 w-8" />
+                  </div>
+                )}
+              </div>
+              <p className="mt-4 text-sm font-medium text-zinc-900">{avatarSrc ? "Active account avatar" : "No avatar uploaded"}</p>
+            </div>
+
+            <form className="grid gap-3" onSubmit={uploadAvatar}>
+              <label
+                htmlFor="settings-avatar-input"
+                className="flex h-12 cursor-pointer items-center gap-3 rounded-2xl border border-zinc-300 bg-white px-3"
+              >
+                <span className="inline-flex h-8 shrink-0 items-center rounded-lg bg-zinc-100 px-3 text-sm font-medium text-zinc-800">
+                  Choose File
+                </span>
+                <span className="truncate text-sm text-zinc-700">{avatarFileName || "PNG, JPG, or WEBP image"}</span>
+              </label>
+              <input
+                id="settings-avatar-input"
+                ref={avatarInputRef}
+                type="file"
+                accept="image/png,image/jpeg,image/webp,image/jpg"
+                onChange={(event) => setAvatarFileName(event.target.files?.[0]?.name || "")}
+                className="sr-only"
+              />
+              <div className="grid gap-3 sm:grid-cols-2">
+                <button
+                  type="submit"
+                  disabled={uploadingAvatar}
+                  className="inline-flex h-11 items-center justify-center rounded-full bg-zinc-900 px-5 font-mono text-xs uppercase tracking-[0.16em] text-white transition-colors hover:bg-black disabled:opacity-60"
+                >
+                  {uploadingAvatar ? "Uploading..." : "Upload Avatar"}
+                </button>
+                <button
+                  type="button"
+                  onClick={removeAvatar}
+                  disabled={uploadingAvatar || !profile?.avatarUrl}
+                  className="inline-flex h-11 items-center justify-center rounded-full border border-zinc-300 px-5 font-mono text-xs uppercase tracking-[0.16em] text-zinc-700 transition-colors hover:border-zinc-900 hover:text-zinc-900 disabled:opacity-50"
+                >
+                  Remove Avatar
+                </button>
+              </div>
+              <p className="text-sm leading-relaxed text-zinc-600">
+                The avatar updates the settings summary rail and any account-linked surfaces that read the profile image.
+              </p>
+            </form>
+          </div>
+        );
+      case "password":
+        return (
+          <form className="mx-auto grid w-full max-w-[34rem] gap-3" onSubmit={savePassword}>
+            <input
+              value={currentPassword}
+              onChange={(event) => setCurrentPassword(event.target.value)}
+              placeholder="Current password"
+              type="password"
+              minLength={8}
+              required
+              className="h-11 rounded-2xl border border-zinc-300 bg-white px-3 text-sm text-zinc-900 outline-none transition-colors focus:border-zinc-900"
+            />
+            <input
+              value={newPassword}
+              onChange={(event) => setNewPassword(event.target.value)}
+              placeholder="New password"
+              type="password"
+              minLength={8}
+              required
+              className="h-11 rounded-2xl border border-zinc-300 bg-white px-3 text-sm text-zinc-900 outline-none transition-colors focus:border-zinc-900"
+            />
+            <input
+              value={confirmPassword}
+              onChange={(event) => setConfirmPassword(event.target.value)}
+              placeholder="Confirm new password"
+              type="password"
+              minLength={8}
+              required
+              className="h-11 rounded-2xl border border-zinc-300 bg-white px-3 text-sm text-zinc-900 outline-none transition-colors focus:border-zinc-900"
+            />
+            <button
+              type="submit"
+              disabled={savingPassword}
+              className="inline-flex h-11 items-center justify-center rounded-full border border-zinc-900 px-5 font-mono text-xs uppercase tracking-[0.16em] text-zinc-900 transition-colors hover:bg-zinc-900 hover:text-white disabled:opacity-60"
+            >
+              {savingPassword ? "Updating..." : "Update Password"}
+            </button>
+          </form>
+        );
+      case "output":
+        return (
+          <form className="mx-auto w-full max-w-[42rem]" onSubmit={savePreferences}>
+            <PreferenceRow
+              label="Default result view"
+              description="Choose the default identify mode when opening scan screen."
+              control={
+                <select
+                  value={preferences.defaultOutput}
+                  onChange={(event) =>
+                    setPreferences((previous) => ({ ...previous, defaultOutput: event.target.value as OutputMode }))
+                  }
+                  className="h-9 rounded-full border border-zinc-300 bg-white px-3 text-xs font-medium uppercase tracking-[0.12em] text-zinc-700 outline-none transition-colors focus:border-zinc-900"
+                >
+                  <option value="smart">Smart</option>
+                  <option value="species">Species-first</option>
+                  <option value="disease">Disease-first</option>
+                </select>
+              }
+            />
+            <PreferenceRow
+              label="Allow model fallback"
+              description="Permit fallback mode when preferred recognition path is unavailable."
+              control={
+                <ToggleControl
+                  checked={preferences.allowModelFallback}
+                  onClick={() => setPreferences((previous) => ({ ...previous, allowModelFallback: !previous.allowModelFallback }))}
+                />
+              }
+            />
+            <div className="pt-4">
+              <button
+                type="submit"
+                disabled={savingPreferences}
+                className="inline-flex h-11 items-center justify-center rounded-full bg-zinc-900 px-5 font-mono text-xs uppercase tracking-[0.16em] text-white transition-colors hover:bg-black disabled:opacity-60"
+              >
+                {savingPreferences ? "Saving..." : "Save Output Rules"}
+              </button>
+            </div>
+          </form>
+        );
+      case "notifications":
+        return (
+          <form className="mx-auto w-full max-w-[42rem]" onSubmit={savePreferences}>
+            <PreferenceRow
+              label="Scan notifications"
+              description="Receive in-app alerts for scan completion and result states."
+              control={
+                <ToggleControl
+                  checked={preferences.scanNotifications}
+                  onClick={() => setPreferences((previous) => ({ ...previous, scanNotifications: !previous.scanNotifications }))}
+                />
+              }
+            />
+            <PreferenceRow
+              label="Email notifications"
+              description="Allow summary messages for account and identification updates."
+              control={
+                <ToggleControl
+                  checked={preferences.emailNotifications}
+                  onClick={() => setPreferences((previous) => ({ ...previous, emailNotifications: !previous.emailNotifications }))}
+                />
+              }
+            />
+            <PreferenceRow
+              label="Login alerts"
+              description="Get alerts when your account is accessed from a new session."
+              control={
+                <ToggleControl
+                  checked={preferences.loginAlerts}
+                  onClick={() => setPreferences((previous) => ({ ...previous, loginAlerts: !previous.loginAlerts }))}
+                />
+              }
+            />
+            <PreferenceRow
+              label="Incident alerts"
+              description="Enable alerts for system incidents that affect scan reliability."
+              control={
+                <ToggleControl
+                  checked={preferences.incidentAlerts}
+                  onClick={() => setPreferences((previous) => ({ ...previous, incidentAlerts: !previous.incidentAlerts }))}
+                />
+              }
+            />
+            <div className="pt-4">
+              <button
+                type="submit"
+                disabled={savingPreferences}
+                className="inline-flex h-11 items-center justify-center rounded-full bg-zinc-900 px-5 font-mono text-xs uppercase tracking-[0.16em] text-white transition-colors hover:bg-black disabled:opacity-60"
+              >
+                {savingPreferences ? "Saving..." : "Save Alerts"}
+              </button>
+            </div>
+          </form>
+        );
+      case "security":
+        return (
+          <form className="mx-auto w-full max-w-[42rem]" onSubmit={savePreferences}>
+            <PreferenceRow
+              label="Two-factor authentication"
+              description="Enable extra verification requirement for sign-in."
+              control={
+                <ToggleControl
+                  checked={preferences.twoFactorEnabled}
+                  onClick={() => setPreferences((previous) => ({ ...previous, twoFactorEnabled: !previous.twoFactorEnabled }))}
+                />
+              }
+            />
+            <PreferenceRow
+              label="Audit log retention"
+              description="Set how long account and activity audit events are retained."
+              control={
+                <select
+                  value={String(preferences.auditRetentionDays)}
+                  onChange={(event) =>
+                    setPreferences((previous) => ({
+                      ...previous,
+                      auditRetentionDays: event.target.value === "30" ? 30 : event.target.value === "365" ? 365 : 90
+                    }))
+                  }
+                  className="h-9 rounded-full border border-zinc-300 bg-white px-3 text-xs font-medium uppercase tracking-[0.12em] text-zinc-700 outline-none transition-colors focus:border-zinc-900"
+                >
+                  <option value="30">30 days</option>
+                  <option value="90">90 days</option>
+                  <option value="365">365 days</option>
+                </select>
+              }
+            />
+            <div className="pt-4">
+              <button
+                type="submit"
+                disabled={savingPreferences}
+                className="inline-flex h-11 items-center justify-center rounded-full bg-zinc-900 px-5 font-mono text-xs uppercase tracking-[0.16em] text-white transition-colors hover:bg-black disabled:opacity-60"
+              >
+                {savingPreferences ? "Saving..." : "Save Security"}
+              </button>
+            </div>
+          </form>
+        );
+    }
+  };
 
   const saveProfile = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -213,6 +564,7 @@ export default function SettingsPage() {
       setFullName(json.data.fullName);
       setEmail(json.data.email);
       setBio(json.data.bio || "");
+      notifyAuthChanged();
       setStatus("Profile updated");
     } catch {
       setStatus("Profile update failed");
@@ -309,6 +661,7 @@ export default function SettingsPage() {
       }
 
       setProfile((previous) => (previous ? { ...previous, avatarUrl: String(json.data.avatarUrl || "") } : previous));
+      notifyAuthChanged();
       if (avatarInputRef.current) {
         avatarInputRef.current.value = "";
       }
@@ -334,6 +687,7 @@ export default function SettingsPage() {
       }
 
       setProfile((previous) => (previous ? { ...previous, avatarUrl: "" } : previous));
+      notifyAuthChanged();
       setStatus("Profile picture removed");
     } catch {
       setStatus("Avatar remove failed");
@@ -344,8 +698,8 @@ export default function SettingsPage() {
 
   if (loading) {
     return (
-      <main className="relative isolate h-full min-h-0 overflow-x-hidden overflow-y-auto bg-transparent text-foreground">
-        <div className="grid h-full place-items-center">
+      <main className="relative isolate w-full overflow-x-hidden bg-transparent text-foreground">
+        <div className="grid min-h-[60vh] place-items-center">
           <p className="font-mono text-xs uppercase tracking-[0.2em] text-zinc-500">Loading Account Settings...</p>
         </div>
       </main>
@@ -353,325 +707,93 @@ export default function SettingsPage() {
   }
 
   return (
-    <main className="relative isolate h-full min-h-0 overflow-x-hidden overflow-y-auto bg-transparent text-foreground">
+    <main className="relative isolate w-full overflow-x-hidden bg-transparent text-foreground xl:flex xl:h-full xl:min-h-0 xl:flex-col xl:overflow-hidden">
       <div className="pointer-events-none absolute inset-0 z-0">
         <div className="absolute left-[-16rem] top-[-10rem] h-[32rem] w-[32rem] rounded-full bg-surface/70 blur-3xl" />
         <div className="absolute right-[-12rem] bottom-[-8rem] h-[24rem] w-[24rem] rounded-full bg-surface-soft/40 blur-3xl" />
       </div>
 
-      <section className="relative z-10 h-auto xl:h-full px-4 pb-10 pt-14 md:px-8 md:pb-12 md:pt-20 lg:px-10 xl:px-12">
-        <div className="mx-auto grid h-auto xl:h-full w-full max-w-[1700px] min-h-0 gap-5 xl:grid-cols-12">
-          <motion.section
-            initial={{ opacity: 0, y: 16 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.38 }}
-            className="flex min-h-0 flex-col overflow-hidden p-2 xl:col-span-4 xl:p-3"
-          >
-            <p className="font-mono text-[10px] uppercase tracking-[0.24em] text-zinc-500">Account Center</p>
-            <h1 className="mt-2 text-[clamp(3.4rem,7.2vw,6.6rem)] leading-[0.84] font-display font-bold tracking-[-0.08em]">SETTINGS</h1>
-            <p className="mt-2 max-w-xl text-sm leading-relaxed text-zinc-600 md:text-base">
-              Manage profile details, security, and app behavior for both user and admin accounts.
-            </p>
+      <section className="relative z-10 px-4 pb-12 pt-14 md:px-8 md:pb-16 md:pt-20 lg:px-10 xl:flex-1 xl:min-h-0 xl:px-12 xl:pb-6 xl:pt-8">
+        <div className="mx-auto flex w-full max-w-[1700px] flex-col gap-4 xl:h-full xl:min-h-0 xl:justify-center">
+          <CenteredPageHero
+            title="SETTINGS"
+            description="Manage identity, security, and product behavior from one account workspace."
+            titleClassName="text-[clamp(4rem,10vw,8.6rem)] leading-[0.74]"
+            descriptionClassName="mt-1 max-w-[56rem]"
+            className="mt-4 xl:mt-4"
+          />
 
-            <div className="mt-6 grid grid-cols-2 gap-4 border-t border-zinc-900/14 pt-4 sm:grid-cols-3">
-              <article>
-                <p className="font-mono text-[10px] uppercase tracking-[0.16em] text-zinc-500">Role</p>
-                <p className="mt-1 text-2xl font-semibold text-zinc-900 uppercase">{profile?.role || "user"}</p>
-              </article>
-              <article>
-                <p className="font-mono text-[10px] uppercase tracking-[0.16em] text-zinc-500">Status</p>
-                <p className="mt-1 text-2xl font-semibold text-zinc-900 capitalize">{profile?.accountStatus || "active"}</p>
-              </article>
-              <article>
-                <p className="font-mono text-[10px] uppercase tracking-[0.16em] text-zinc-500">Joined</p>
-                <p className="mt-1 text-xl font-semibold text-zinc-900">{new Date(profile?.createdAt || Date.now()).getFullYear()}</p>
-              </article>
-            </div>
+          <WorkspaceExpander
+            panelButtons={panelButtons}
+            selectedPanelKey={selectedPanelKey}
+            onSelectPanel={setSelectedPanelKey}
+            onBackToGrid={() => setSelectedPanelKey("")}
+            renderExpandedPanel={renderSettingsPanel}
+            sideRail={
+              <motion.aside
+                initial={{ opacity: 0, y: 16 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.38 }}
+                className="flex h-full min-h-0 flex-col"
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <p className="font-mono text-[10px] uppercase tracking-[0.18em] text-zinc-500">Account Preview</p>
+                  <span className="inline-flex items-center rounded-full border border-zinc-900/12 bg-zinc-50 px-3 py-1 font-mono text-[10px] uppercase tracking-[0.14em] text-zinc-700">
+                    {profile?.role || "user"}
+                  </span>
+                </div>
 
-            <div className="mt-6 flex items-center gap-4 border-t border-zinc-900/14 pt-4">
-              <div className="relative h-20 w-20 overflow-hidden rounded-full border border-zinc-200 bg-zinc-100">
-                {avatarSrc ? (
-                  <Image src={avatarSrc} alt="Profile avatar" fill sizes="80px" className="object-cover" />
-                ) : (
-                  <div className="grid h-full w-full place-items-center text-zinc-400">
-                    <Camera className="h-6 w-6" />
+                <div className="mt-5 flex items-center gap-4">
+                  <div className="relative h-24 w-24 overflow-hidden rounded-full border border-zinc-900/10 bg-zinc-50">
+                    {avatarSrc ? (
+                      <Image src={avatarSrc} alt="Profile avatar" fill sizes="96px" className="object-cover" />
+                    ) : (
+                      <div className="grid h-full w-full place-items-center text-zinc-400">
+                        <Camera className="h-7 w-7" />
+                      </div>
+                    )}
                   </div>
-                )}
-              </div>
-              <div className="min-w-0">
-                <p className="truncate text-sm font-semibold text-zinc-900">{profile?.fullName || "User"}</p>
-                <p className="truncate text-xs text-zinc-500">{profile?.email || ""}</p>
-                <p className="mt-2 inline-flex items-center gap-1 rounded-full border border-zinc-900/15 px-2 py-0.5 font-mono text-[10px] uppercase tracking-[0.14em] text-zinc-600">
-                  <ShieldCheck className="h-3 w-3" />
-                  {profile?.accountStatus || "active"}
-                </p>
-              </div>
-            </div>
-          </motion.section>
+                  <div className="min-w-0">
+                    <p className="truncate text-[1.7rem] font-display font-semibold leading-[0.95] tracking-[-0.04em] text-zinc-950">
+                      {profile?.fullName || "User"}
+                    </p>
+                    <p className="mt-2 truncate text-sm text-zinc-600">{profile?.email || ""}</p>
+                    <p className="mt-2 inline-flex items-center gap-1 rounded-full border border-zinc-900/12 bg-zinc-50 px-2.5 py-1 font-mono text-[10px] uppercase tracking-[0.14em] text-zinc-700">
+                      <ShieldCheck className="h-3 w-3 text-zinc-500" />
+                      {profile?.accountStatus || "active"}
+                    </p>
+                  </div>
+                </div>
 
-          <motion.section
-            initial={{ opacity: 0, y: 16 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.38, delay: 0.05 }}
-            className="min-h-0 rounded-[28px] border border-zinc-900/12 bg-white/90 p-5 shadow-[0_18px_45px_rgba(24,24,27,0.08)] backdrop-blur-xl xl:col-span-8 xl:p-6"
-          >
-            <div className="flex h-auto min-h-0 flex-col xl:h-full">
-              <div className="flex items-center justify-between gap-3">
-                <p className="font-mono text-[10px] uppercase tracking-[0.18em] text-zinc-500">Settings Surface</p>
-                <p className="font-mono text-[10px] uppercase tracking-[0.16em] text-zinc-400">Profile, Security, Preferences</p>
-              </div>
-
-              <div className="mt-4 min-h-0 flex-1 overflow-y-auto pr-1">
-                <div className="grid gap-6 pb-6">
-                  <article className="flex flex-col border-t border-zinc-900/14 pt-3">
-                    <p className="font-mono text-[10px] uppercase tracking-[0.18em] text-zinc-500">Profile Picture</p>
-                    <form className="mt-3 border-t border-zinc-900/14 pt-3" onSubmit={uploadAvatar}>
-                      <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_auto_auto] md:items-center">
-                        <label
-                          htmlFor="settings-avatar-input"
-                          className="flex h-12 cursor-pointer items-center gap-3 rounded-2xl border border-zinc-300 bg-white/90 px-3"
-                        >
-                          <span className="inline-flex h-8 shrink-0 items-center rounded-lg bg-zinc-100 px-3 text-sm font-medium text-zinc-800">
-                            Choose File
-                          </span>
-                          <span className="truncate text-sm text-zinc-700">{avatarFileName || "No file selected"}</span>
-                        </label>
-                        <input
-                          id="settings-avatar-input"
-                          ref={avatarInputRef}
-                          type="file"
-                          accept="image/png,image/jpeg,image/webp,image/jpg"
-                          onChange={(event) => setAvatarFileName(event.target.files?.[0]?.name || "")}
-                          className="sr-only"
-                        />
-                      <button
-                        type="submit"
-                        disabled={uploadingAvatar}
-                        className="inline-flex h-12 items-center justify-center rounded-full bg-zinc-900 px-8 font-mono text-xs uppercase tracking-[0.16em] text-white transition-colors hover:bg-black disabled:opacity-60"
-                      >
-                        {uploadingAvatar ? "Uploading..." : "Upload"}
-                      </button>
-                      <button
-                        type="button"
-                        onClick={removeAvatar}
-                        disabled={uploadingAvatar || !profile?.avatarUrl}
-                        className="inline-flex h-12 items-center justify-center rounded-full border border-zinc-300 px-8 font-mono text-xs uppercase tracking-[0.16em] text-zinc-700 transition-colors hover:border-zinc-900 hover:text-zinc-900 disabled:opacity-50"
-                      >
-                        Remove
-                      </button>
-                      </div>
-                    </form>
+                <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-2">
+                  <article className="rounded-[22px] border border-zinc-900/10 bg-zinc-50/85 px-4 py-3">
+                    <p className="font-mono text-[10px] uppercase tracking-[0.16em] text-zinc-500">Joined</p>
+                    <p className="mt-2 text-2xl font-semibold text-zinc-950">{new Date(profile?.createdAt || Date.now()).getFullYear()}</p>
                   </article>
-
-                  <article className="flex flex-col border-t border-zinc-900/14 pt-3">
-                    <p className="font-mono text-[10px] uppercase tracking-[0.18em] text-zinc-500">Profile Details</p>
-                    <form className="mt-3 grid gap-3 border-t border-zinc-900/14 pt-3" onSubmit={saveProfile}>
-                      <input
-                        value={fullName}
-                        onChange={(event) => setFullName(event.target.value)}
-                        placeholder="Full name"
-                        required
-                        className="h-10 rounded-md border border-zinc-300 bg-white/90 px-3 text-sm text-zinc-900 outline-none transition-colors focus:border-zinc-900"
-                      />
-                      <input
-                        value={email}
-                        onChange={(event) => setEmail(event.target.value)}
-                        placeholder="Email"
-                        type="email"
-                        required
-                        className="h-10 rounded-md border border-zinc-300 bg-white/90 px-3 text-sm text-zinc-900 outline-none transition-colors focus:border-zinc-900"
-                      />
-                      <textarea
-                        value={bio}
-                        onChange={(event) => setBio(event.target.value)}
-                        placeholder="Bio"
-                        rows={4}
-                        className="rounded-md border border-zinc-300 bg-white/90 px-3 py-2 text-sm text-zinc-900 outline-none transition-colors focus:border-zinc-900"
-                      />
-                      <button
-                        type="submit"
-                        disabled={savingProfile}
-                        className="inline-flex h-10 items-center justify-center gap-2 rounded-full bg-zinc-900 px-5 font-mono text-xs uppercase tracking-[0.16em] text-white transition-colors hover:bg-black disabled:opacity-60"
-                      >
-                        <Save className="h-3.5 w-3.5" />
-                        {savingProfile ? "Saving..." : "Save Profile"}
-                      </button>
-                    </form>
+                  <article className="rounded-[22px] border border-zinc-900/10 bg-zinc-50/85 px-4 py-3">
+                    <p className="font-mono text-[10px] uppercase tracking-[0.16em] text-zinc-500">Default Mode</p>
+                    <p className="mt-2 text-xl font-semibold uppercase text-zinc-950">{preferences.defaultOutput}</p>
                   </article>
-
-                  <article className="flex flex-col border-t border-zinc-900/14 pt-3">
-                    <p className="font-mono text-[10px] uppercase tracking-[0.18em] text-zinc-500">Password</p>
-                    <form className="mt-3 grid gap-3 border-t border-zinc-900/14 pt-3" onSubmit={savePassword}>
-                      <input
-                        value={currentPassword}
-                        onChange={(event) => setCurrentPassword(event.target.value)}
-                        placeholder="Current password"
-                        type="password"
-                        minLength={8}
-                        required
-                        className="h-10 rounded-md border border-zinc-300 bg-white/90 px-3 text-sm text-zinc-900 outline-none transition-colors focus:border-zinc-900"
-                      />
-                      <input
-                        value={newPassword}
-                        onChange={(event) => setNewPassword(event.target.value)}
-                        placeholder="New password"
-                        type="password"
-                        minLength={8}
-                        required
-                        className="h-10 rounded-md border border-zinc-300 bg-white/90 px-3 text-sm text-zinc-900 outline-none transition-colors focus:border-zinc-900"
-                      />
-                      <input
-                        value={confirmPassword}
-                        onChange={(event) => setConfirmPassword(event.target.value)}
-                        placeholder="Confirm new password"
-                        type="password"
-                        minLength={8}
-                        required
-                        className="h-10 rounded-md border border-zinc-300 bg-white/90 px-3 text-sm text-zinc-900 outline-none transition-colors focus:border-zinc-900"
-                      />
-                      <button
-                        type="submit"
-                        disabled={savingPassword}
-                        className="inline-flex h-10 items-center justify-center rounded-full border border-zinc-900 px-5 font-mono text-xs uppercase tracking-[0.16em] text-zinc-900 transition-colors hover:bg-zinc-900 hover:text-white disabled:opacity-60"
-                      >
-                        {savingPassword ? "Updating..." : "Update Password"}
-                      </button>
-                    </form>
+                  <article className="rounded-[22px] border border-zinc-900/10 bg-zinc-50/85 px-4 py-3">
+                    <p className="font-mono text-[10px] uppercase tracking-[0.16em] text-zinc-500">Notifications</p>
+                    <p className="mt-2 text-xl font-semibold text-zinc-950">{notificationState}</p>
                   </article>
-
-                  <article className="flex flex-col border-t border-zinc-900/14 pt-3">
-                    <p className="font-mono text-[10px] uppercase tracking-[0.18em] text-zinc-500">Preferences</p>
-                    <form className="mt-3 border-t border-zinc-900/14 pt-3" onSubmit={savePreferences}>
-                      <PreferenceRow
-                        label="Default result view"
-                        description="Choose the default identify mode when opening scan screen."
-                        control={
-                          <select
-                            value={preferences.defaultOutput}
-                            onChange={(event) =>
-                              setPreferences((previous) => ({ ...previous, defaultOutput: event.target.value as OutputMode }))
-                            }
-                            className="h-8 rounded-lg border border-zinc-300 bg-white px-2.5 text-xs font-medium text-zinc-700 outline-none transition-colors focus:border-zinc-900"
-                          >
-                            <option value="smart">Smart</option>
-                            <option value="species">Species-first</option>
-                            <option value="disease">Disease-first</option>
-                          </select>
-                        }
-                      />
-
-                      <PreferenceRow
-                        label="Scan notifications"
-                        description="Receive in-app alerts for scan completion and result states."
-                        control={
-                          <ToggleControl
-                            checked={preferences.scanNotifications}
-                            onClick={() =>
-                              setPreferences((previous) => ({ ...previous, scanNotifications: !previous.scanNotifications }))
-                            }
-                          />
-                        }
-                      />
-
-                      <PreferenceRow
-                        label="Email notifications"
-                        description="Allow summary messages for account and identification updates."
-                        control={
-                          <ToggleControl
-                            checked={preferences.emailNotifications}
-                            onClick={() =>
-                              setPreferences((previous) => ({ ...previous, emailNotifications: !previous.emailNotifications }))
-                            }
-                          />
-                        }
-                      />
-
-                      <PreferenceRow
-                        label="Login alerts"
-                        description="Get alerts when your account is accessed from a new session."
-                        control={
-                          <ToggleControl
-                            checked={preferences.loginAlerts}
-                            onClick={() => setPreferences((previous) => ({ ...previous, loginAlerts: !previous.loginAlerts }))}
-                          />
-                        }
-                      />
-
-                      <PreferenceRow
-                        label="Two-factor authentication"
-                        description="Enable extra verification requirement for sign-in."
-                        control={
-                          <ToggleControl
-                            checked={preferences.twoFactorEnabled}
-                            onClick={() =>
-                              setPreferences((previous) => ({ ...previous, twoFactorEnabled: !previous.twoFactorEnabled }))
-                            }
-                          />
-                        }
-                      />
-
-                      <PreferenceRow
-                        label="Allow model fallback"
-                        description="Permit fallback mode when preferred recognition path is unavailable."
-                        control={
-                          <ToggleControl
-                            checked={preferences.allowModelFallback}
-                            onClick={() =>
-                              setPreferences((previous) => ({ ...previous, allowModelFallback: !previous.allowModelFallback }))
-                            }
-                          />
-                        }
-                      />
-
-                      <PreferenceRow
-                        label="Audit log retention"
-                        description="Set how long account and activity audit events are retained."
-                        control={
-                          <select
-                            value={String(preferences.auditRetentionDays)}
-                            onChange={(event) =>
-                              setPreferences((previous) => ({
-                                ...previous,
-                                auditRetentionDays: event.target.value === "30" ? 30 : event.target.value === "365" ? 365 : 90
-                              }))
-                            }
-                            className="h-8 rounded-lg border border-zinc-300 bg-white px-2.5 text-xs font-medium text-zinc-700 outline-none transition-colors focus:border-zinc-900"
-                          >
-                            <option value="30">30 days</option>
-                            <option value="90">90 days</option>
-                            <option value="365">365 days</option>
-                          </select>
-                        }
-                      />
-
-                      <PreferenceRow
-                        label="Incident alerts"
-                        description="Enable alerts for system incidents that affect scan reliability."
-                        control={
-                          <ToggleControl
-                            checked={preferences.incidentAlerts}
-                            onClick={() =>
-                              setPreferences((previous) => ({ ...previous, incidentAlerts: !previous.incidentAlerts }))
-                            }
-                          />
-                        }
-                      />
-
-                      <div className="pt-3">
-                        <button
-                          type="submit"
-                          disabled={savingPreferences}
-                          className="inline-flex h-10 items-center justify-center rounded-full border border-zinc-900 px-5 font-mono text-xs uppercase tracking-[0.16em] text-zinc-900 transition-colors hover:bg-zinc-900 hover:text-white disabled:opacity-60"
-                        >
-                          {savingPreferences ? "Saving..." : "Save Preferences"}
-                        </button>
-                      </div>
-                    </form>
+                  <article className="rounded-[22px] border border-zinc-900/10 bg-zinc-50/85 px-4 py-3">
+                    <p className="font-mono text-[10px] uppercase tracking-[0.16em] text-zinc-500">Retention</p>
+                    <p className="mt-2 text-xl font-semibold text-zinc-950">{preferences.auditRetentionDays}d</p>
                   </article>
                 </div>
-              </div>
-            </div>
-          </motion.section>
+
+                <div className="mt-5 rounded-[24px] border border-zinc-900/10 bg-zinc-50/85 px-4 py-4">
+                  <p className="font-mono text-[10px] uppercase tracking-[0.16em] text-zinc-500">Workspace Notes</p>
+                  <div className="mt-3 space-y-2 text-sm leading-relaxed text-zinc-600">
+                    <p>Use the selector grid on the left to move between identity, avatar, password, output, alert, and security controls.</p>
+                    <p>All changes still write through the same account endpoints and local default-output storage.</p>
+                  </div>
+                </div>
+              </motion.aside>
+            }
+          />
         </div>
 
         {status && (

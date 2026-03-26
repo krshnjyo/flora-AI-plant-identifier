@@ -63,13 +63,13 @@ export default function RegisterPage() {
   };
 
   return (
-    <main className="relative isolate h-full min-h-0 overflow-x-hidden overflow-y-auto xl:overflow-hidden bg-transparent text-foreground">
+    <main className="relative isolate w-full overflow-x-hidden bg-transparent text-foreground xl:flex xl:h-full xl:min-h-0 xl:flex-col xl:overflow-hidden">
       <div className="pointer-events-none absolute inset-0 z-0">
         <div className="absolute left-[-16rem] top-[-10rem] h-[32rem] w-[32rem] rounded-full bg-surface/70 blur-3xl" />
         <div className="absolute right-[-12rem] bottom-[-8rem] h-[24rem] w-[24rem] rounded-full bg-surface-soft/40 blur-3xl" />
       </div>
 
-      <section className="relative z-10 flex h-full items-center px-4 pb-6 pt-10 md:px-8 md:pb-8 md:pt-14 lg:px-10 xl:px-12">
+      <section className="relative z-10 flex min-h-[calc(100vh-10rem)] items-center px-4 pb-6 pt-10 md:min-h-[calc(100vh-11rem)] md:px-8 md:pb-8 md:pt-14 lg:px-10 xl:flex-1 xl:min-h-0 xl:px-12 xl:py-6">
         <div className="mx-auto grid w-full max-w-[1700px] items-center gap-5 xl:-translate-y-4 xl:grid-cols-12">
           <motion.section
             initial={{ opacity: 0, y: 16 }}
@@ -163,6 +163,7 @@ export default function RegisterPage() {
                   "Sign Up"
                 )}
               </button>
+
             </form>
 
             <Link

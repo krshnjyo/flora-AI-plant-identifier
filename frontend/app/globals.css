@@ -41,48 +41,35 @@
 html,
 body {
   height: 100%;
-  overscroll-behavior: none;
+  min-height: 100%;
 }
 
 html {
   font-size: 16px;
   -webkit-text-size-adjust: 100%;
   text-size-adjust: 100%;
+  background-color: #000000;
 }
 
 body {
-  display: flex;
-  flex-direction: column;
   min-height: 100vh;
   color: var(--foreground);
-  background-color: var(--background);
+  background-color: #000000;
   font-family: -apple-system, BlinkMacSystemFont, var(--font-body);
   letter-spacing: -0.015em;
   -webkit-font-smoothing: antialiased;
   padding: 0;
   overflow-x: hidden;
   overflow-y: auto;
+  overscroll-behavior-y: auto;
+  -webkit-overflow-scrolling: touch;
 }
 
-body.home-locked {
-  display: grid;
-  grid-template-rows: auto minmax(0, 1fr) auto;
-  height: 100dvh;
-  overflow: hidden;
-}
-
-html.home-locked-html {
-  height: 100dvh;
-  overflow: hidden;
-}
-
-body.home-locked>main {
-  min-height: 0;
-  overflow: hidden;
-}
-
-body > main {
-  min-height: 0;
+@media (min-width: 1280px) {
+  body {
+    overflow: hidden;
+    overscroll-behavior: none;
+  }
 }
 
 :where(a, button, [role="button"], input, select, textarea, summary):focus-visible {
@@ -192,6 +179,49 @@ h6 {
 
 .animate-fade-in-up {
   animation: fade-in-up 0.8s ease forwards;
+}
+
+@keyframes result-panel-expand {
+  from {
+    opacity: 0;
+    transform: translateY(18px) scale(0.985);
+  }
+
+  60% {
+    opacity: 1;
+    transform: translateY(0) scale(1.003);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes result-panel-content {
+  from {
+    opacity: 0;
+    transform: translateY(14px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-result-panel-expand {
+  transform-origin: top center;
+  will-change: transform, opacity;
+  animation: result-panel-expand 360ms var(--motion-ease) both;
+}
+
+.animate-result-panel-content {
+  animation: result-panel-content 320ms var(--motion-ease) both;
+}
+
+.animate-result-panel-content-delay {
+  animation: result-panel-content 320ms 70ms var(--motion-ease) both;
 }
 
 .grid-surface {

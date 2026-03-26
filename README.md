@@ -167,6 +167,7 @@ LOCAL_MODEL_ENDPOINT=http://127.0.0.1:5050/predict
 UPSTASH_REDIS_REST_URL=
 UPSTASH_REDIS_REST_TOKEN=
 ```
+- add your frontend origins (for example `http://localhost:3000` and `http://127.0.0.1:3000`) to the OAuth client's Authorized JavaScript origins
 
 Generate a strong JWT secret if needed:
 

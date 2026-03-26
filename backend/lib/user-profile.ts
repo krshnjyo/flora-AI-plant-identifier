@@ -6,6 +6,7 @@
 import { getPool } from "@/lib/db";
 
 let profileTableReady = false;
+let profileTableReadyPromise: Promise<void> | null = null;
 
 type ProfileColumnDefinition = {
   name: string;
@@ -59,12 +60,21 @@ const requiredColumns: ProfileColumnDefinition[] = [
   }
 ];
 
+/**
+ * Ensure newer optional profile columns exist on older databases without
+ * assuming every deployment has already re-run the latest schema migration.
+ */
 async function ensureProfileColumns() {
   const pool = getPool();
+  const [existingColumns] = await pool.execute("SHOW COLUMNS FROM user_profiles");
+  const existingColumnNames = new Set(
+    (existingColumns as Array<{ Field?: string; field?: string }>).map((column) => column.Field || column.field || "")
+  );
+
   for (const column of requiredColumns) {
-    const [rows] = await pool.execute("SHOW COLUMNS FROM user_profiles LIKE ?", [column.name]);
-    if ((rows as unknown[]).length === 0) {
+    if (!existingColumnNames.has(column.name)) {
       await pool.execute(column.ddl);
+      existingColumnNames.add(column.name);
     }
   }
 }
@@ -75,27 +85,38 @@ async function ensureProfileColumns() {
  */
 export async function ensureUserProfileTable() {
   if (profileTableReady) return;
+  if (profileTableReadyPromise) {
+    await profileTableReadyPromise;
+    return;
+  }
 
-  await getPool().execute(
-    `CREATE TABLE IF NOT EXISTS user_profiles (
-       user_id INT PRIMARY KEY,
-       bio TEXT NULL,
-       avatar_url VARCHAR(255) NULL,
-       default_output ENUM('smart','species','disease') NOT NULL DEFAULT 'smart',
-       scan_notifications TINYINT(1) NOT NULL DEFAULT 1,
-       email_notifications TINYINT(1) NOT NULL DEFAULT 1,
-       login_alerts TINYINT(1) NOT NULL DEFAULT 1,
-       two_factor_enabled TINYINT(1) NOT NULL DEFAULT 0,
-       allow_model_fallback TINYINT(1) NOT NULL DEFAULT 1,
-       audit_retention_days INT NOT NULL DEFAULT 90,
-       incident_alerts TINYINT(1) NOT NULL DEFAULT 1,
-       updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-       CONSTRAINT fk_user_profiles_user
-         FOREIGN KEY (user_id) REFERENCES users(user_id) ON DELETE CASCADE
-     )`
-  );
+  profileTableReadyPromise = (async () => {
+    await getPool().execute(
+      `CREATE TABLE IF NOT EXISTS user_profiles (
+         user_id INT PRIMARY KEY,
+         bio TEXT NULL,
+         avatar_url VARCHAR(255) NULL,
+         default_output ENUM('smart','species','disease') NOT NULL DEFAULT 'smart',
+         scan_notifications TINYINT(1) NOT NULL DEFAULT 1,
+         email_notifications TINYINT(1) NOT NULL DEFAULT 1,
+         login_alerts TINYINT(1) NOT NULL DEFAULT 1,
+         two_factor_enabled TINYINT(1) NOT NULL DEFAULT 0,
+         allow_model_fallback TINYINT(1) NOT NULL DEFAULT 1,
+         audit_retention_days INT NOT NULL DEFAULT 90,
+         incident_alerts TINYINT(1) NOT NULL DEFAULT 1,
+         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+         CONSTRAINT fk_user_profiles_user
+           FOREIGN KEY (user_id) REFERENCES users(user_id) ON DELETE CASCADE
+       )`
+    );
 
-  await ensureProfileColumns();
+    await ensureProfileColumns();
+    profileTableReady = true;
+  })();
 
-  profileTableReady = true;
+  try {
+    await profileTableReadyPromise;
+  } finally {
+    profileTableReadyPromise = null;
+  }
 }

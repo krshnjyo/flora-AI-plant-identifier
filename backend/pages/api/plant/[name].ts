@@ -67,10 +67,20 @@ export default withMethods(["GET"], async function handler(req: NextApiRequest, 
         aliases: [localMatch.scientific_name, localMatch.species],
         declaredImageUrl: localMatch.image_url || null
       });
+      const galleryImages =
+        localMatch.media?.gallery_images?.filter((item): item is string => typeof item === "string" && item.trim().length > 0) || [];
 
       return sendSuccess(res, {
         ...localMatch,
-        image_url: imageUrl || localMatch.image_url || ""
+        image_url: imageUrl || localMatch.image_url || "",
+        media: {
+          gallery_images: galleryImages.length
+            ? galleryImages
+            : imageUrl || localMatch.image_url
+              ? [String(imageUrl || localMatch.image_url)]
+              : [],
+          video_src: localMatch.media?.video_src || "/placeholder.mp4"
+        }
       });
     }
   } catch {

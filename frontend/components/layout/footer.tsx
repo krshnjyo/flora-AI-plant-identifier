@@ -32,6 +32,7 @@ const fallbackStripImages: StripImage[] = [
 export function Footer() {
   const pathname = usePathname();
   const showStrip = true;
+  const animateStrip = true;
   const [stripImages, setStripImages] = useState<StripImage[]>(fallbackStripImages);
 
   useEffect(() => {
@@ -127,7 +128,9 @@ export function Footer() {
             >
               In
             </a>
-            <p className="ml-1 font-mono text-[9px] font-bold uppercase tracking-[0.14em] text-zinc-400 sm:text-[10px] sm:tracking-widest">Est. 2024</p>
+            <p className="ml-1 font-mono text-[9px] font-bold uppercase tracking-[0.14em] text-zinc-400 sm:text-[10px] sm:tracking-widest">
+              Est. 2024
+            </p>
           </div>
         </div>
       </div>
@@ -154,7 +157,7 @@ export function Footer() {
               </Link>
             </div>
           </div>
-          <div className="footer-strip-track flex w-max gap-0 pr-0 will-change-transform">
+          <div className={`flex w-max gap-0 pr-0 ${animateStrip ? "footer-strip-track will-change-transform" : ""}`}>
             {marqueeImages.map((image, index) => (
               <article key={`${image.src}-${index}`} className="group relative h-[4.8rem] shrink-0 md:h-[5.1rem]">
                 <Image

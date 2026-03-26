@@ -16,6 +16,7 @@ import { DragEvent, FormEvent, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
 import { ArrowUpRight, Camera, ScanLine, Search } from "lucide-react";
+import { CenteredPageHero, GlassSurface } from "@/components/layout/showcase-shell";
 import { apiFetch, apiFetchJson, getApiErrorMessage } from "@/lib/api-client";
 import { navigateWithFloraTransition } from "@/lib/navigation-transition";
 import { useHomeLocked } from "@/lib/use-home-locked";
@@ -206,29 +207,31 @@ export default function IdentifyPage() {
   };
 
   return (
-    <main className="relative isolate h-full min-h-0 overflow-x-hidden overflow-y-auto xl:overflow-hidden bg-transparent text-foreground">
+    <main className="relative isolate w-full overflow-x-hidden bg-transparent text-foreground xl:flex xl:h-full xl:min-h-0 xl:flex-col xl:overflow-hidden">
       <div className="pointer-events-none absolute inset-0 z-0">
         <div className="absolute left-[-16rem] top-[-10rem] h-[32rem] w-[32rem] rounded-full bg-surface/70 blur-3xl" />
         <div className="absolute right-[-12rem] bottom-[-8rem] h-[24rem] w-[24rem] rounded-full bg-surface-soft/40 blur-3xl" />
       </div>
 
-      <section className="relative z-10 h-auto xl:h-full px-4 pb-6 pt-10 md:px-8 md:pb-8 md:pt-14 lg:px-10 xl:px-12">
-        <div className="mx-auto grid h-auto xl:h-full w-full max-w-[1700px] min-h-0 gap-5 xl:grid-cols-12">
-          <motion.section
-            initial={{ opacity: 0, y: 16 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.4 }}
-            className="flex min-h-0 flex-col p-2 xl:col-span-8 xl:p-3"
-          >
-            <header>
-              <p className="font-mono text-[10px] uppercase tracking-[0.24em] text-zinc-500">Flora Intelligence Interface</p>
-              <h1 className="mt-2 text-[clamp(4.2rem,10.6vw,8.8rem)] leading-[0.84] font-display font-bold tracking-[-0.09em]">IDENTIFY</h1>
-              <p className="mt-2 max-w-3xl text-sm leading-relaxed text-zinc-600 md:text-base">
-                Upload a plant image for local AI model detection to species or disease output. Manual lookup is available for known names.
-              </p>
-            </header>
+      <section className="relative z-10 px-4 pb-10 pt-10 md:px-8 md:pb-12 md:pt-14 lg:px-10 xl:flex-1 xl:min-h-0 xl:px-12 xl:pb-6 xl:pt-11">
+        <div className="mx-auto flex w-full max-w-[1700px] flex-col gap-2 xl:h-full xl:min-h-0 xl:justify-start">
+          <CenteredPageHero
+            title="IDENTIFY"
+            description="Upload one specimen image, route directly into plant or disease results, or jump into the catalog by name."
+            titleClassName="text-[clamp(4rem,10vw,8.6rem)] leading-[0.74]"
+            descriptionClassName="mt-1 max-w-[56rem]"
+            className="mt-4 xl:mt-4"
+          />
 
-            <form className="mt-4 flex min-h-0 flex-1 flex-col" onSubmit={onUpload}>
+          <div className="grid min-h-0 gap-3 xl:mt-2 xl:h-[34rem] xl:min-h-0 xl:grid-cols-12">
+            <GlassSurface className="xl:col-span-8 xl:flex xl:h-full xl:min-h-0 xl:flex-col xl:p-3">
+              <motion.section
+                initial={{ opacity: 0, y: 16 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.4 }}
+                className="flex min-h-0 flex-col xl:h-full"
+              >
+                <form className="flex min-h-0 flex-1 flex-col" onSubmit={onUpload}>
               <input
                 ref={fileRef}
                 id="image"
@@ -355,7 +358,7 @@ export default function IdentifyPage() {
                 </div>
               </div>
 
-              <div className="mt-4 grid w-full grid-cols-1 gap-4 pt-4 xl:grid-cols-[minmax(0,1fr)_auto] xl:items-end">
+              <div className="mt-2 grid w-full grid-cols-1 gap-3 pt-2 xl:grid-cols-[minmax(0,1fr)_auto] xl:items-end">
                 <div className="grid gap-3 sm:grid-cols-[auto_1fr] sm:items-end sm:gap-6">
                   <div className="min-w-0">
                     <p className="font-mono text-[10px] uppercase tracking-[0.16em] text-zinc-500">Analyze For</p>
@@ -405,19 +408,20 @@ export default function IdentifyPage() {
                   {!loading && <ArrowUpRight className="h-4 w-4 transition-transform group-hover:-translate-y-0.5 group-hover:translate-x-0.5" />}
                 </button>
               </div>
-            </form>
-          </motion.section>
+                </form>
+              </motion.section>
+            </GlassSurface>
 
-          <motion.aside
-            initial={{ opacity: 0, y: 16 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.4, delay: 0.08 }}
-            className="min-h-0 rounded-[28px] border border-zinc-900/12 bg-white/70 p-5 shadow-[0_18px_45px_rgba(24,24,27,0.08)] backdrop-blur-xl xl:col-span-4 xl:p-6"
-          >
-            <div className="grid h-full min-h-0 grid-rows-[auto_auto_1fr] gap-4">
-              <article className="rounded-2xl border border-zinc-900/12 bg-white/80 p-4">
+            <GlassSurface className="xl:col-span-4 xl:flex xl:h-full xl:min-h-0 xl:flex-col xl:p-3">
+              <motion.aside
+                initial={{ opacity: 0, y: 16 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.4, delay: 0.08 }}
+                className="flex h-full min-h-0 flex-col"
+              >
+              <article className="flex h-full min-h-0 flex-col rounded-[24px] border border-zinc-900/12 bg-white/82 p-5 shadow-[0_12px_30px_rgba(24,24,27,0.06)]">
                 <div className="flex items-center justify-between gap-3">
-                  <p className="font-mono text-[10px] uppercase tracking-[0.18em] text-zinc-500">Manual Search</p>
+                  <p className="font-mono text-[10px] uppercase tracking-[0.18em] text-zinc-500">Lookup Console</p>
                   <div className="flex flex-wrap items-center justify-end gap-1.5">
                     <button
                       type="button"
@@ -430,7 +434,7 @@ export default function IdentifyPage() {
                     <button
                       type="button"
                       onClick={() => navigateWithFloraTransition(router, "/disease-gallery")}
-                      className="group inline-flex items-center gap-1.5 rounded-full border border-red-200 bg-red-50 px-2.5 py-1.5 font-mono text-[10px] uppercase tracking-[0.12em] text-red-700 transition-colors hover:border-red-300 hover:bg-red-100 sm:px-3 sm:tracking-[0.14em]"
+                      className="group inline-flex items-center gap-1.5 rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-1.5 font-mono text-[10px] uppercase tracking-[0.12em] text-emerald-700 transition-colors hover:border-emerald-300 hover:bg-emerald-100 sm:px-3 sm:tracking-[0.14em]"
                     >
                       Disease Gallery
                       <ArrowUpRight className="h-3 w-3 transition-transform group-hover:-translate-y-0.5 group-hover:translate-x-0.5" />
@@ -438,7 +442,7 @@ export default function IdentifyPage() {
                   </div>
                 </div>
 
-                <form className="mt-3 space-y-3 border-t border-zinc-900/14 pt-3" onSubmit={onManualSearch}>
+                <form className="mt-4 space-y-3 border-t border-zinc-900/14 pt-4" onSubmit={onManualSearch}>
                   <label htmlFor="manualName" className="font-mono text-[10px] uppercase tracking-[0.16em] text-zinc-500">
                     Plant or Disease Name
                   </label>
@@ -449,7 +453,7 @@ export default function IdentifyPage() {
                     required
                     disabled={manualSearchLoading}
                     aria-busy={manualSearchLoading}
-                    className="w-full rounded-2xl border border-zinc-300 bg-white px-4 py-2.5 text-sm text-zinc-900 outline-none transition-colors placeholder:text-zinc-400 focus:border-zinc-900"
+                    className="w-full rounded-2xl border border-zinc-300 bg-white px-4 py-3 text-sm text-zinc-900 outline-none transition-colors placeholder:text-zinc-400 focus:border-zinc-900"
                   />
                   <button
                     type="submit"
@@ -460,11 +464,13 @@ export default function IdentifyPage() {
                     {manualSearchLoading ? "Searching..." : "Search Database"}
                   </button>
                 </form>
-              </article>
 
-              <article className="rounded-2xl border border-zinc-900/12 bg-white/80 p-4">
-                <p className="font-mono text-[10px] uppercase tracking-[0.18em] text-zinc-500">Quick Queries</p>
-                <div className="mt-3 flex flex-wrap gap-2 border-t border-zinc-900/14 pt-3">
+                <div className="mt-5 border-t border-zinc-900/14 pt-5">
+                  <div className="flex items-start justify-between gap-3">
+                    <p className="font-mono text-[10px] uppercase tracking-[0.18em] text-zinc-500">Quick Queries</p>
+                  </div>
+
+                  <div className="mt-4 flex flex-wrap gap-2 border-t border-zinc-900/14 pt-4">
                   {[
                     { name: "Tomato", type: "plant" },
                     { name: "Potato", type: "plant" },
@@ -477,24 +483,17 @@ export default function IdentifyPage() {
                       key={item.name}
                       type="button"
                       onClick={() => navigateWithFloraTransition(router, `/results/${item.type}/${encodeURIComponent(item.name)}`)}
-                      className="floating-chip rounded-full px-3 py-1 text-xs transition-colors hover:border-zinc-900 hover:text-zinc-900"
+                      className="rounded-full border border-zinc-300 bg-white px-3 py-1.5 text-xs text-zinc-800 transition-colors hover:border-zinc-900 hover:text-zinc-900"
                     >
                       {item.name}
                     </button>
                   ))}
+                  </div>
                 </div>
               </article>
-
-              <article className="rounded-2xl border border-zinc-900/12 bg-white/80 p-4">
-                <p className="font-mono text-[10px] uppercase tracking-[0.18em] text-zinc-500">Pipeline</p>
-                <div className="mt-3 space-y-2 border-t border-zinc-900/14 pt-3 text-sm leading-relaxed text-zinc-700">
-                  <p>1. Upload image and choose Smart, Plant, or Disease mode.</p>
-                  <p>2. Plant and disease inference run in parallel, then match to database entries.</p>
-                  <p>3. Smart mode opens a chooser when both are found; Plant/Disease mode opens direct result pages.</p>
-                </div>
-              </article>
-            </div>
-          </motion.aside>
+              </motion.aside>
+            </GlassSurface>
+          </div>
         </div>
       </section>
     </main>

@@ -4,20 +4,28 @@
   "scientific_name": "Capsicum annuum",
   "species": "C. annuum",
   "family": "Solanaceae",
-  "image_url": "/gallery-result/plants/pepperbell.png",
+  "image_url": "/gallery-result/plants/bell1.jpeg",
+  "media": {
+    "gallery_images": [
+      "/gallery-result/plants/bell1.jpeg",
+      "/gallery-result/plants/bell2.jpg",
+      "/gallery-result/plants/bell3.jpg"
+    ],
+    "video_src": "/placeholder.mp4"
+  },
   "plant_description": "Bell pepper is a warm-season crop valued for thick-walled fruits and high vitamin content.",
   "growth_conditions": {
-    "soil_requirements": "Well-drained loamy soil with pH 6.0-6.8",
-    "water_requirements": "Regular moisture without prolonged saturation",
+    "soil_requirements": "Well-drained soil with pH 6.5-7.0 and steady organic matter",
+    "water_requirements": "Keep soil evenly moist with deep soaking and avoid long dry swings",
     "sunlight_requirements": "Full sun for at least 6 hours daily",
-    "temperature_conditions": "Optimal growth between 20 and 30 degrees Celsius"
+    "temperature_conditions": "Warm growing conditions, with fruit set best in moderate heat and decline above 32 degrees Celsius"
   },
   "watering_schedule": {
-    "frequency": "Every 2-3 days in heat, weekly during cooler spells",
+    "frequency": "Soak thoroughly once or twice weekly, more often in sandy soil or heat",
     "chart_data": [
       { "day": "Monday", "water": true },
       { "day": "Tuesday", "water": false },
-      { "day": "Wednesday", "water": true },
+      { "day": "Wednesday", "water": false },
       { "day": "Thursday", "water": false },
       { "day": "Friday", "water": true },
       { "day": "Saturday", "water": false },

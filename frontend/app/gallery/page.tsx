@@ -45,13 +45,13 @@ export default function GalleryPage() {
   }));
 
   return (
-    <main className="relative isolate h-full min-h-0 overflow-hidden bg-transparent text-foreground">
+    <main className="relative isolate w-full overflow-x-hidden bg-transparent text-foreground xl:flex xl:h-full xl:min-h-0 xl:flex-col xl:overflow-hidden">
       <div className="pointer-events-none absolute inset-0 z-0">
         <div className="absolute left-[-16rem] top-[-10rem] h-[32rem] w-[32rem] rounded-full bg-surface/70 blur-3xl" />
         <div className="absolute right-[-12rem] bottom-[-8rem] h-[24rem] w-[24rem] rounded-full bg-surface-soft/40 blur-3xl" />
       </div>
 
-      <section className="relative z-10 h-full min-h-0">
+      <section className="relative z-10 w-full xl:flex-1 xl:min-h-0">
         <div className="absolute left-4 top-4 z-50 hidden flex-wrap items-center gap-2 md:left-8 md:top-7 xl:flex">
           <button
             type="button"
@@ -71,11 +71,16 @@ export default function GalleryPage() {
           </button>
         </div>
 
-        <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.45 }} className="hidden h-full w-full xl:block">
+        <motion.div
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          transition={{ duration: 0.45 }}
+          className="hidden w-full xl:block xl:h-full"
+        >
           <DomeGallery items={galleryItems} entityType="plant" />
         </motion.div>
 
-        <div className="h-full overflow-y-auto px-4 pb-6 pt-4 sm:px-6 md:px-8 xl:hidden">
+        <div className="px-4 pb-6 pt-4 sm:px-6 md:px-8 xl:hidden">
           <div className="sticky top-2 z-20 mb-4 flex flex-wrap items-center gap-2 rounded-2xl border border-zinc-900/10 bg-white/85 p-2 backdrop-blur">
             <button
               type="button"

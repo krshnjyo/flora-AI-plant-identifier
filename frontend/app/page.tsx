@@ -27,13 +27,13 @@ export default function Home() {
   useHomeLocked();
 
   return (
-    <main className="relative isolate h-full min-h-0 overflow-x-hidden overflow-y-auto xl:overflow-hidden bg-transparent text-foreground">
+    <main className="relative isolate w-full overflow-x-hidden bg-transparent text-foreground xl:flex xl:h-full xl:min-h-0 xl:flex-col xl:overflow-hidden">
       <div className="pointer-events-none absolute inset-0 z-0">
         <div className="absolute right-[-12rem] bottom-[-8rem] h-[24rem] w-[24rem] rounded-full bg-surface-soft/40 blur-3xl" />
       </div>
 
-      <section className="relative z-10 h-auto xl:h-full px-4 pb-6 pt-8 md:px-8 md:pb-8 md:pt-10 lg:px-10 xl:px-12">
-        <div className="mx-auto flex h-auto xl:h-full max-w-[1700px] -translate-y-1 flex-col items-center justify-center md:-translate-y-2 xl:-translate-y-6">
+      <section className="relative z-10 px-4 pb-10 pt-8 md:px-8 md:pb-12 md:pt-10 lg:px-10 xl:flex-1 xl:min-h-0 xl:px-12 xl:pb-0">
+        <div className="mx-auto flex min-h-[calc(100vh-13rem)] max-w-[1700px] -translate-y-1 flex-col items-center justify-center md:-translate-y-2 xl:h-full xl:min-h-0 xl:-translate-y-6">
           <div
             onMouseEnter={() => setFloraHovered(true)}
             onMouseLeave={() => setFloraHovered(false)}

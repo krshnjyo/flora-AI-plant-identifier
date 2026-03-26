@@ -109,7 +109,6 @@ export default withMethods(["GET", "PUT"], async function handler(req: NextApiRe
   if (!user) return;
 
   await ensureUserProfileTable();
-
   if (req.method === "GET") {
     const profile = await getProfile(user.userId);
     if (!profile) {

@@ -17,6 +17,10 @@ export type PlantResultJson = {
   species: string;
   family: string;
   image_url?: string | null;
+  media?: {
+    gallery_images?: string[];
+    video_src?: string | null;
+  };
   plant_description: string;
   growth_conditions: {
     soil_requirements: string;

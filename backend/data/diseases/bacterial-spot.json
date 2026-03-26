@@ -1,7 +1,14 @@
 {
   "disease_name": "Bacterial Spot",
   "affected_species": "Pepper, Tomato",
-  "image_url": "/diseases/bacterial-spot-dataset.jpg",
+  "image_url": "/gallery-result/diseases/bact1.jpg",
+  "media": {
+    "gallery_images": [
+      "/gallery-result/diseases/bact1.jpg",
+      "/gallery-result/diseases/bact2.jpg"
+    ],
+    "video_src": "/placeholder.mp4"
+  },
   "disease_category": "Bacterial leaf and fruit spot",
   "pathogen_type": "Xanthomonas species complex",
   "affected_parts": "Leaves, stems, and fruits",

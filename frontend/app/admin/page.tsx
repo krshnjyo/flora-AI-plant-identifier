@@ -12,9 +12,12 @@
 
 "use client";
 
-import { type FormEvent, useEffect, useMemo, useState } from "react";
+import { type FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import Image from "next/image";
 import { motion } from "framer-motion";
+import { CenteredPageHero } from "@/components/layout/showcase-shell";
+import { WorkspaceExpander } from "@/components/layout/workspace-expander";
+import { type WorkspaceButtonTone } from "@/components/layout/workspace-button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -50,6 +53,8 @@ type PlantRecord = {
   species: string;
 };
 
+type AdminPanelKey = "plants" | "diseases" | "relations" | "sync" | "uploads" | "users";
+
 export default function AdminPage() {
   const [authorized, setAuthorized] = useState<boolean | null>(null);
   const [stats, setStats] = useState<Stats | null>(null);
@@ -57,10 +62,21 @@ export default function AdminPage() {
   const [plants, setPlants] = useState<PlantRecord[]>([]);
   const [deletePlantId, setDeletePlantId] = useState("");
   const [status, setStatus] = useState("");
+  const [selectedPanelKey, setSelectedPanelKey] = useState<AdminPanelKey | "">("");
 
   useHomeLocked();
 
-  const loadAll = async () => {
+  /**
+   * Refresh all admin-facing datasets.
+   *
+   * Notes:
+   * - Authorization is checked first so we do not fetch admin payloads for
+   *   non-admin users.
+   * - Downstream requests are intentionally isolated with `allSettled()` so a
+   *   single transient failure does not flip the whole page into an
+   *   unauthorized state after auth already succeeded.
+   */
+  const loadAll = useCallback(async () => {
     const me = await apiFetchJson<{ user: { role: "user" | "admin" } }>("/api/auth/me");
     if (!me.response.ok || !me.json?.success || me.json.data.user.role !== "admin") {
       setAuthorized(false);
@@ -69,23 +85,28 @@ export default function AdminPage() {
 
     setAuthorized(true);
 
-    const [statsResponse, usersResponse, plantsResponse] = await Promise.all([
+    const [statsResponse, usersResponse, plantsResponse] = await Promise.allSettled([
       apiFetchJson<Stats>("/api/admin/stats"),
       apiFetchJson<User[]>("/api/admin/users"),
       apiFetchJson<PlantRecord[]>("/api/plants")
     ]);
 
-    if (statsResponse.response.ok && statsResponse.json?.success) {
-      setStats(statsResponse.json.data);
+    if (statsResponse.status === "fulfilled" && statsResponse.value.response.ok && statsResponse.value.json?.success) {
+      setStats(statsResponse.value.json.data);
     }
 
-    if (usersResponse.response.ok && usersResponse.json?.success) {
-      setUsers(usersResponse.json.data);
+    if (usersResponse.status === "fulfilled" && usersResponse.value.response.ok && usersResponse.value.json?.success) {
+      setUsers(usersResponse.value.json.data);
     }
 
-    if (plantsResponse.response.ok && plantsResponse.json?.success && Array.isArray(plantsResponse.json.data)) {
+    if (
+      plantsResponse.status === "fulfilled" &&
+      plantsResponse.value.response.ok &&
+      plantsResponse.value.json?.success &&
+      Array.isArray(plantsResponse.value.json.data)
+    ) {
       setPlants(
-        plantsResponse.json.data.map((plant: PlantRecord) => ({
+        plantsResponse.value.json.data.map((plant: PlantRecord) => ({
           plant_id: plant.plant_id,
           common_name: plant.common_name,
           scientific_name: plant.scientific_name,
@@ -93,13 +114,13 @@ export default function AdminPage() {
         }))
       );
     }
-  };
+  }, []);
 
   useEffect(() => {
     loadAll().catch(() => {
       setAuthorized(false);
     });
-  }, []);
+  }, [loadAll]);
 
   const summary = useMemo(
     () => ({
@@ -115,6 +136,345 @@ export default function AdminPage() {
     if (!id) return null;
     return plants.find((plant) => plant.plant_id === id) || null;
   }, [deletePlantId, plants]);
+  const panelButtons: Array<{
+    key: AdminPanelKey;
+    label: string;
+    title: string;
+    description: string;
+    tone?: WorkspaceButtonTone;
+  }> = [
+    {
+      key: "plants",
+      label: "Catalog",
+      title: "Plant Records",
+      description: `${summary.plants} specimen entries in the active catalog.`
+    },
+    {
+      key: "diseases",
+      label: "Pathology",
+      title: "Disease Records",
+      description: `${summary.diseases} disease entries available for routing.`,
+      tone: "danger"
+    },
+    {
+      key: "relations",
+      label: "Relations",
+      title: "Plant + Disease Links",
+      description: "Create or remove record pairings used by the result layer."
+    },
+    {
+      key: "sync",
+      label: "Sync",
+      title: "Catalog Sync",
+      description: "Push JSON catalog changes into the database state."
+    },
+    {
+      key: "uploads",
+      label: "Telemetry",
+      title: "Recent Uploads",
+      description: `${stats?.recentUploads.length || 0} recent scan events in the admin feed.`,
+      tone: "accent"
+    },
+    {
+      key: "users",
+      label: "Access",
+      title: "User Controls",
+      description: `${users.length} user accounts with editable roles and status.`
+    }
+  ];
+
+  const renderAdminPanel = () => {
+    switch (selectedPanelKey || "plants") {
+      case "plants":
+        return (
+          <div className="grid gap-5 xl:grid-cols-[minmax(0,1.1fr)_minmax(18rem,0.9fr)]">
+            <form className="grid gap-3 md:grid-cols-2" onSubmit={createPlant}>
+              <Input name="commonName" placeholder="Common name" required className="h-11 rounded-2xl border-zinc-300 bg-white/90 focus:border-zinc-900" />
+              <Input name="scientificName" placeholder="Scientific name" required className="h-11 rounded-2xl border-zinc-300 bg-white/90 focus:border-zinc-900" />
+              <Input name="species" placeholder="Species" required className="h-11 rounded-2xl border-zinc-300 bg-white/90 focus:border-zinc-900" />
+              <Input
+                name="confidenceScore"
+                type="number"
+                min={0}
+                max={100}
+                step="0.01"
+                placeholder="Confidence score"
+                required
+                className="h-11 rounded-2xl border-zinc-300 bg-white/90 focus:border-zinc-900"
+              />
+              <div className="md:col-span-2">
+                <Label htmlFor="jsonFileUpload" className="mb-2 block font-mono text-[10px] uppercase tracking-[0.16em] text-zinc-500">
+                  JSON Data Source
+                </Label>
+                <div className="grid gap-3 md:grid-cols-2">
+                  <Input id="jsonFileUpload" name="jsonFileUpload" type="file" accept="application/json,.json" className="h-11 rounded-2xl bg-white/90" />
+                  <Input
+                    id="jsonFilePath"
+                    name="jsonFile"
+                    placeholder="Existing JSON path"
+                    className="h-11 rounded-2xl border-zinc-300 bg-white/90 focus:border-zinc-900"
+                  />
+                </div>
+              </div>
+              <div className="md:col-span-2">
+                <Label htmlFor="plantImageUpload" className="mb-2 block font-mono text-[10px] uppercase tracking-[0.16em] text-zinc-500">
+                  Plant Image (Optional)
+                </Label>
+                <Input
+                  id="plantImageUpload"
+                  name="plantImageUpload"
+                  type="file"
+                  accept="image/png,image/jpeg,image/webp,image/jpg"
+                  className="h-11 rounded-2xl bg-white/90"
+                />
+              </div>
+              <button
+                type="submit"
+                className="md:col-span-2 inline-flex h-11 items-center justify-center rounded-full bg-zinc-900 px-5 font-mono text-xs uppercase tracking-[0.16em] text-white transition-colors hover:bg-black"
+              >
+                Add Plant
+              </button>
+            </form>
+
+            <div className="space-y-4">
+              <form className="grid gap-3" onSubmit={deletePlant}>
+                <Input
+                  name="plantId"
+                  type="number"
+                  min={1}
+                  placeholder="Plant ID to delete"
+                  required
+                  value={deletePlantId}
+                  onChange={(event) => setDeletePlantId(event.target.value)}
+                  className="h-11 rounded-2xl border-zinc-300 bg-white/90 focus:border-zinc-900"
+                />
+                <button
+                  type="submit"
+                  className="inline-flex h-11 items-center justify-center rounded-full border border-red-600 px-5 font-mono text-xs uppercase tracking-[0.16em] text-red-600 transition-colors hover:bg-red-600 hover:text-white"
+                >
+                  Delete Plant
+                </button>
+              </form>
+              <article className="rounded-[24px] border border-zinc-900/10 bg-zinc-50/85 p-4">
+                <p className="font-mono text-[10px] uppercase tracking-[0.18em] text-zinc-500">Delete Preview</p>
+                <p className="mt-3 text-sm leading-relaxed text-zinc-600">
+                  {selectedPlantForDelete
+                    ? `Selected: ${selectedPlantForDelete.common_name} (${selectedPlantForDelete.scientific_name})`
+                    : deletePlantId
+                      ? "No plant found for this ID."
+                      : "Enter a plant ID to preview the record before deleting."}
+                </p>
+              </article>
+            </div>
+          </div>
+        );
+      case "diseases":
+        return (
+          <div className="grid gap-5 xl:grid-cols-[minmax(0,1.08fr)_minmax(18rem,0.92fr)]">
+            <form className="grid gap-3 md:grid-cols-2" onSubmit={createDisease}>
+              <Input name="diseaseName" placeholder="Disease name" required className="h-11 rounded-2xl border-zinc-300 bg-white/90 focus:border-zinc-900" />
+              <Input name="affectedSpecies" placeholder="Affected species" className="h-11 rounded-2xl border-zinc-300 bg-white/90 focus:border-zinc-900" />
+              <Input name="primaryPlantId" type="number" min={1} placeholder="Optional primary plant ID" className="h-11 rounded-2xl border-zinc-300 bg-white/90 focus:border-zinc-900 md:col-span-2" />
+              <div className="md:col-span-2">
+                <Label htmlFor="diseaseJsonUpload" className="mb-2 block font-mono text-[10px] uppercase tracking-[0.16em] text-zinc-500">
+                  Disease JSON Source
+                </Label>
+                <div className="grid gap-3 md:grid-cols-2">
+                  <Input id="diseaseJsonUpload" name="jsonFileUpload" type="file" accept="application/json,.json" className="h-11 rounded-2xl bg-white/90" />
+                  <Input
+                    id="diseaseJsonPath"
+                    name="jsonFile"
+                    placeholder="Existing disease JSON path"
+                    className="h-11 rounded-2xl border-zinc-300 bg-white/90 focus:border-zinc-900"
+                  />
+                </div>
+              </div>
+              <Textarea name="diseaseDescription" placeholder="Description" required className="min-h-[68px] rounded-[22px] border-zinc-300 bg-white/90 focus:border-zinc-900" />
+              <Textarea name="symptoms" placeholder="Symptoms" required className="min-h-[68px] rounded-[22px] border-zinc-300 bg-white/90 focus:border-zinc-900" />
+              <Textarea name="causes" placeholder="Causes" required className="min-h-[68px] rounded-[22px] border-zinc-300 bg-white/90 focus:border-zinc-900" />
+              <Textarea name="preventionMethods" placeholder="Prevention methods" required className="min-h-[68px] rounded-[22px] border-zinc-300 bg-white/90 focus:border-zinc-900" />
+              <Textarea name="treatmentMethods" placeholder="Treatment methods" required className="min-h-[68px] rounded-[22px] border-zinc-300 bg-white/90 focus:border-zinc-900" />
+              <Input name="severityLevel" placeholder="Severity level" required className="h-11 rounded-2xl border-zinc-300 bg-white/90 focus:border-zinc-900" />
+              <button
+                type="submit"
+                className="md:col-span-2 inline-flex h-11 items-center justify-center rounded-full bg-zinc-900 px-5 font-mono text-xs uppercase tracking-[0.16em] text-white transition-colors hover:bg-black"
+              >
+                Create Disease Entry
+              </button>
+            </form>
+
+            <form className="grid gap-3" onSubmit={deleteDisease}>
+              <Input name="diseaseId" type="number" min={1} placeholder="Disease ID to delete" required className="h-11 rounded-2xl border-zinc-300 bg-white/90 focus:border-zinc-900" />
+              <Input
+                name="diseaseJsonFile"
+                placeholder="Optional disease JSON path"
+                className="h-11 rounded-2xl border-zinc-300 bg-white/90 focus:border-zinc-900"
+              />
+              <label className="inline-flex items-center gap-2 text-xs text-zinc-600">
+                <input type="checkbox" name="deleteDiseaseJson" aria-label="Delete disease JSON file" className="h-4 w-4" />
+                Also delete the JSON file path above
+              </label>
+              <button
+                type="submit"
+                className="inline-flex h-11 items-center justify-center rounded-full border border-red-600 px-5 font-mono text-xs uppercase tracking-[0.16em] text-red-600 transition-colors hover:bg-red-600 hover:text-white"
+              >
+                Delete Disease
+              </button>
+            </form>
+          </div>
+        );
+      case "relations":
+        return (
+          <div className="grid gap-5 xl:grid-cols-2">
+            <form className="grid gap-3" onSubmit={linkPlantDisease}>
+              <p className="font-mono text-[10px] uppercase tracking-[0.16em] text-zinc-500">Link Plant + Disease</p>
+              <Input name="relationPlantId" type="number" min={1} placeholder="Plant ID" required className="h-11 rounded-2xl border-zinc-300 bg-white/90 focus:border-zinc-900" />
+              <Input name="relationDiseaseId" type="number" min={1} placeholder="Disease ID" required className="h-11 rounded-2xl border-zinc-300 bg-white/90 focus:border-zinc-900" />
+              <select
+                name="relationType"
+                defaultValue="common"
+                aria-label="Relation type"
+                className="h-11 rounded-2xl border border-zinc-300 bg-white/90 px-3 text-xs font-mono uppercase tracking-[0.12em] text-zinc-700 focus:border-zinc-900 focus:outline-none"
+              >
+                <option value="common">Common</option>
+                <option value="primary">Primary</option>
+                <option value="possible">Possible</option>
+              </select>
+              <button
+                type="submit"
+                className="inline-flex h-11 items-center justify-center rounded-full border border-zinc-900 px-5 font-mono text-xs uppercase tracking-[0.16em] text-zinc-900 transition-colors hover:bg-zinc-900 hover:text-white"
+              >
+                Save Link
+              </button>
+            </form>
+
+            <form className="grid gap-3" onSubmit={unlinkPlantDisease}>
+              <p className="font-mono text-[10px] uppercase tracking-[0.16em] text-zinc-500">Unlink Plant + Disease</p>
+              <Input name="unlinkPlantId" type="number" min={1} placeholder="Plant ID" required className="h-11 rounded-2xl border-zinc-300 bg-white/90 focus:border-zinc-900" />
+              <Input name="unlinkDiseaseId" type="number" min={1} placeholder="Disease ID" required className="h-11 rounded-2xl border-zinc-300 bg-white/90 focus:border-zinc-900" />
+              <button
+                type="submit"
+                className="inline-flex h-11 items-center justify-center rounded-full border border-red-600 px-5 font-mono text-xs uppercase tracking-[0.16em] text-red-600 transition-colors hover:bg-red-600 hover:text-white"
+              >
+                Remove Link
+              </button>
+            </form>
+          </div>
+        );
+      case "sync":
+        return (
+          <div className="mx-auto flex h-full w-full max-w-[32rem] flex-col justify-center">
+            <article className="rounded-[24px] border border-zinc-900/10 bg-zinc-50/85 p-5">
+              <p className="font-mono text-[10px] uppercase tracking-[0.18em] text-zinc-500">Catalog Sync</p>
+              <p className="mt-3 text-sm leading-relaxed text-zinc-600">
+                Push JSON catalog changes into the database and refresh admin counts, recent uploads, and record surfaces.
+              </p>
+              <button
+                type="button"
+                onClick={syncCatalog}
+                className="mt-5 inline-flex h-11 items-center justify-center rounded-full bg-zinc-900 px-5 font-mono text-xs uppercase tracking-[0.16em] text-white transition-colors hover:bg-black"
+              >
+                Sync JSON To DB
+              </button>
+            </article>
+          </div>
+        );
+      case "uploads":
+        return stats && stats.recentUploads.length > 0 ? (
+          <div className="w-full overflow-x-auto">
+            <Table>
+              <TableHeader>
+                <TableRow className="border-zinc-900/10">
+                  <TableHead className="font-mono text-[10px] uppercase tracking-[0.16em] text-zinc-500">Plant</TableHead>
+                  <TableHead className="font-mono text-[10px] uppercase tracking-[0.16em] text-zinc-500">Pathology</TableHead>
+                  <TableHead className="font-mono text-[10px] uppercase tracking-[0.16em] text-zinc-500">Visual</TableHead>
+                  <TableHead className="font-mono text-[10px] uppercase tracking-[0.16em] text-zinc-500">Timestamp</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {stats.recentUploads.map((upload) => (
+                  <TableRow key={upload.scan_id} className="border-zinc-900/10">
+                    <TableCell className="font-medium text-zinc-800">{upload.plant_name || "-"}</TableCell>
+                    <TableCell className={upload.disease_name ? "text-red-600" : "text-zinc-500"}>{upload.disease_name || "Healthy"}</TableCell>
+                    <TableCell>
+                      {upload.image_url ? (
+                        <Image
+                          src={toAssetUrl(upload.image_url)}
+                          alt="Scan thumbnail"
+                          width={44}
+                          height={44}
+                          className="h-11 w-11 rounded-md border border-zinc-200 object-cover"
+                          sizes="44px"
+                        />
+                      ) : (
+                        "-"
+                      )}
+                    </TableCell>
+                    <TableCell className="font-mono text-xs text-zinc-500">{new Date(upload.created_at).toLocaleString()}</TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
+        ) : (
+          <div className="rounded-[24px] border border-dashed border-zinc-300 bg-zinc-50/80 px-4 py-5 text-sm leading-relaxed text-zinc-500">
+            No recent scans available.
+          </div>
+        );
+      case "users":
+        return (
+          <div className="w-full overflow-x-auto">
+            <Table>
+              <TableHeader>
+                <TableRow className="border-zinc-900/10">
+                  <TableHead className="font-mono text-[10px] uppercase tracking-[0.16em] text-zinc-500">Name</TableHead>
+                  <TableHead className="font-mono text-[10px] uppercase tracking-[0.16em] text-zinc-500">Email</TableHead>
+                  <TableHead className="font-mono text-[10px] uppercase tracking-[0.16em] text-zinc-500">Role</TableHead>
+                  <TableHead className="font-mono text-[10px] uppercase tracking-[0.16em] text-zinc-500">Status</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {users.map((user) => (
+                  <TableRow key={user.user_id} className="border-zinc-900/10">
+                    <TableCell className="font-medium text-zinc-800">{user.full_name}</TableCell>
+                    <TableCell className="text-zinc-500">{user.email}</TableCell>
+                    <TableCell>
+                      <select
+                        defaultValue={user.role}
+                        aria-label={`Role for ${user.full_name}`}
+                        className="rounded-full border border-zinc-300 bg-white px-3 py-2 text-xs font-mono uppercase focus:border-zinc-900 focus:outline-none"
+                        onChange={(event) => {
+                          updateUser(user.user_id, { role: event.target.value as "user" | "admin" });
+                        }}
+                      >
+                        <option value="user">User</option>
+                        <option value="admin">Admin</option>
+                      </select>
+                    </TableCell>
+                    <TableCell>
+                      <select
+                        defaultValue={user.account_status}
+                        aria-label={`Account status for ${user.full_name}`}
+                        className="rounded-full border border-zinc-300 bg-white px-3 py-2 text-xs font-mono uppercase focus:border-zinc-900 focus:outline-none"
+                        onChange={(event) => {
+                          updateUser(user.user_id, {
+                            accountStatus: event.target.value as "active" | "inactive" | "suspended"
+                          });
+                        }}
+                      >
+                        <option value="active">Active</option>
+                        <option value="inactive">Inactive</option>
+                        <option value="suspended">Suspended</option>
+                      </select>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
+        );
+    }
+  };
 
   const createPlant = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -295,8 +655,8 @@ export default function AdminPage() {
 
   if (authorized === null) {
     return (
-      <main className="relative isolate h-full min-h-0 overflow-x-hidden overflow-y-auto xl:overflow-hidden bg-transparent text-foreground">
-        <div className="grid h-full place-items-center">
+      <main className="relative isolate w-full overflow-x-hidden bg-transparent text-foreground">
+        <div className="grid min-h-[60vh] place-items-center">
           <p className="font-mono text-xs uppercase tracking-[0.2em] text-zinc-500">Verifying Clearance...</p>
         </div>
       </main>
@@ -305,8 +665,8 @@ export default function AdminPage() {
 
   if (!authorized) {
     return (
-      <main className="relative isolate h-full min-h-0 overflow-x-hidden overflow-y-auto xl:overflow-hidden bg-transparent text-foreground">
-        <div className="grid h-full place-items-center px-4">
+      <main className="relative isolate w-full overflow-x-hidden bg-transparent text-foreground">
+        <div className="grid min-h-[60vh] place-items-center px-4">
           <p className="font-mono text-xs uppercase tracking-[0.2em] text-destructive">Access Denied</p>
         </div>
       </main>
@@ -314,401 +674,98 @@ export default function AdminPage() {
   }
 
   return (
-    <main className="relative isolate h-full min-h-0 overflow-x-hidden overflow-y-auto xl:overflow-hidden bg-transparent text-foreground">
+    <main className="relative isolate w-full overflow-x-hidden bg-transparent text-foreground xl:flex xl:h-full xl:min-h-0 xl:flex-col xl:overflow-hidden">
       <div className="pointer-events-none absolute inset-0 z-0">
         <div className="absolute left-[-16rem] top-[-10rem] h-[32rem] w-[32rem] rounded-full bg-surface/70 blur-3xl" />
         <div className="absolute right-[-12rem] bottom-[-8rem] h-[24rem] w-[24rem] rounded-full bg-surface-soft/40 blur-3xl" />
       </div>
 
-      <section className="relative z-10 h-auto xl:h-full px-4 pb-6 pt-14 md:px-8 md:pb-8 md:pt-20 lg:px-10 xl:px-12">
-        <div className="mx-auto grid h-auto xl:h-full w-full max-w-[1700px] min-h-0 gap-5 xl:grid-cols-12">
-          <motion.section
-            initial={{ opacity: 0, y: 16 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.4 }}
-            className="flex min-h-0 flex-col overflow-hidden p-2 xl:col-span-4 xl:p-3"
-          >
-            <header>
-              <p className="font-mono text-[10px] uppercase tracking-[0.24em] text-zinc-500">System Control Surface</p>
-              <h1 className="mt-2 text-[clamp(3.4rem,7.2vw,6.6rem)] leading-[0.84] font-display font-bold tracking-[-0.08em]">ADMIN</h1>
-              <p className="mt-2 text-sm leading-relaxed text-zinc-600 md:text-base">
-                Manage species records, disease profiles, scan telemetry, and user permissions.
-              </p>
-            </header>
+      <section className="relative z-10 px-4 pb-12 pt-14 md:px-8 md:pb-16 md:pt-20 lg:px-10 xl:flex-1 xl:min-h-0 xl:px-12 xl:pb-6 xl:pt-8">
+        <div className="mx-auto flex w-full max-w-[1700px] flex-col gap-4 xl:h-full xl:min-h-0 xl:justify-center">
+          <CenteredPageHero
+            title="ADMIN"
+            description="Manage catalog records, relations, telemetry, and user permissions from one control workspace."
+            titleClassName="text-[clamp(4rem,10vw,8.6rem)] leading-[0.74]"
+            descriptionClassName="mt-1 max-w-[56rem]"
+            className="mt-4 xl:mt-4"
+          />
 
-            <div className="mt-5 grid grid-cols-2 gap-4 border-t border-zinc-900/14 pt-4 sm:grid-cols-3">
-              <article>
-                <p className="font-mono text-[10px] uppercase tracking-[0.16em] text-zinc-500">Specimens</p>
-                <p className="mt-1 text-3xl font-semibold text-zinc-900">{summary.plants}</p>
-              </article>
-              <article>
-                <p className="font-mono text-[10px] uppercase tracking-[0.16em] text-zinc-500">Pathologies</p>
-                <p className="mt-1 text-3xl font-semibold text-zinc-900">{summary.diseases}</p>
-              </article>
-              <article>
-                <p className="font-mono text-[10px] uppercase tracking-[0.16em] text-zinc-500">Scans</p>
-                <p className="mt-1 text-3xl font-semibold text-zinc-900">{summary.scans}</p>
-              </article>
-            </div>
+          <WorkspaceExpander
+            panelButtons={panelButtons}
+            selectedPanelKey={selectedPanelKey}
+            onSelectPanel={setSelectedPanelKey}
+            onBackToGrid={() => setSelectedPanelKey("")}
+            renderExpandedPanel={renderAdminPanel}
+            sideRail={
+              <motion.aside
+                initial={{ opacity: 0, y: 16 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.4 }}
+                className="flex h-full min-h-0 flex-col overflow-hidden"
+              >
+                <div className="flex items-center justify-between gap-3">
+                  <p className="font-mono text-[10px] uppercase tracking-[0.18em] text-zinc-500">System Snapshot</p>
+                  <span className="inline-flex items-center rounded-full border border-zinc-900/12 bg-zinc-50 px-3 py-1 font-mono text-[10px] uppercase tracking-[0.14em] text-zinc-700">
+                    Admin Active
+                  </span>
+                </div>
 
-            <div className="mt-5 border-t border-zinc-900/14 pt-4">
-              <p className="font-mono text-[10px] uppercase tracking-[0.18em] text-zinc-500">Mode</p>
-              <p className="mt-2 text-sm text-zinc-600">Administrator privileges active. Scroll inside the detail surface to review all modules.</p>
-            </div>
-          </motion.section>
-
-          <motion.aside
-            initial={{ opacity: 0, y: 16 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.4, delay: 0.06 }}
-            className="min-h-0 rounded-[28px] border border-zinc-900/12 bg-white/90 p-5 shadow-[0_18px_45px_rgba(24,24,27,0.08)] backdrop-blur-xl xl:col-span-8 xl:p-6"
-          >
-            <div className="flex h-auto min-h-0 flex-col xl:h-full">
-              <div className="flex items-center justify-between gap-3">
-                <p className="font-mono text-[10px] uppercase tracking-[0.18em] text-zinc-500">Admin Modules</p>
-                <p className="hidden font-mono text-[10px] uppercase tracking-[0.16em] text-zinc-400 sm:block">Structured Detail Cards</p>
-              </div>
-
-              <div className="mt-4 min-h-0 flex-1 overflow-y-auto pr-1">
-                <div className="grid gap-6 pb-2">
-                  <article className="flex flex-col border-t border-zinc-900/14 pt-3">
-                    <p className="font-mono text-[10px] uppercase tracking-[0.18em] text-zinc-500">Register Specimen</p>
-                    <form className="mt-3 grid gap-3 border-t border-zinc-900/14 pt-3 md:grid-cols-2" onSubmit={createPlant}>
-                      <Input name="commonName" placeholder="Common name" required className="h-10 border-zinc-300 bg-white/90 focus:border-zinc-900" />
-                      <Input name="scientificName" placeholder="Scientific name" required className="h-10 border-zinc-300 bg-white/90 focus:border-zinc-900" />
-                      <Input name="species" placeholder="Species" required className="h-10 border-zinc-300 bg-white/90 focus:border-zinc-900" />
-                      <Input
-                        name="confidenceScore"
-                        type="number"
-                        min={0}
-                        max={100}
-                        step="0.01"
-                        placeholder="Confidence score"
-                        required
-                        className="h-10 border-zinc-300 bg-white/90 focus:border-zinc-900"
-                      />
-
-                      <div className="md:col-span-2">
-                        <Label htmlFor="jsonFileUpload" className="mb-2 block font-mono text-[10px] uppercase tracking-[0.16em] text-zinc-500">
-                          JSON Data Source
-                        </Label>
-                        <div className="grid gap-3 md:grid-cols-2">
-                          <Input id="jsonFileUpload" name="jsonFileUpload" type="file" accept="application/json,.json" className="h-10 bg-white/90" />
-                          <Input
-                            id="jsonFilePath"
-                            name="jsonFile"
-                            placeholder="or enter existing JSON path"
-                            className="h-10 border-zinc-300 bg-white/90 focus:border-zinc-900"
-                          />
-                        </div>
-                      </div>
-
-                      <div className="md:col-span-2">
-                        <Label htmlFor="plantImageUpload" className="mb-2 block font-mono text-[10px] uppercase tracking-[0.16em] text-zinc-500">
-                          Plant Image (Optional)
-                        </Label>
-                        <Input
-                          id="plantImageUpload"
-                          name="plantImageUpload"
-                          type="file"
-                          accept="image/png,image/jpeg,image/webp,image/jpg"
-                          className="h-10 bg-white/90"
-                        />
-                        <p className="mt-2 text-xs text-zinc-500">Upload JSON + image together to auto-save image and patch JSON image_url.</p>
-                      </div>
-
-                      <button
-                        type="submit"
-                        className="md:col-span-2 inline-flex h-10 items-center justify-center rounded-full bg-zinc-900 px-5 font-mono text-xs uppercase tracking-[0.16em] text-white transition-colors hover:bg-black"
-                      >
-                        Add Plant (JSON + Image)
-                      </button>
-                    </form>
-
-                    <form className="mt-4 grid gap-3 border-t border-zinc-900/14 pt-3 md:grid-cols-[1fr_auto]" onSubmit={deletePlant}>
-                      <Input
-                        name="plantId"
-                        type="number"
-                        min={1}
-                        placeholder="Plant ID to delete"
-                        required
-                        value={deletePlantId}
-                        onChange={(event) => setDeletePlantId(event.target.value)}
-                        className="h-10 border-zinc-300 bg-white/90 focus:border-zinc-900"
-                      />
-                      <button
-                        type="submit"
-                        className="inline-flex h-10 items-center justify-center rounded-full border border-red-600 px-5 font-mono text-xs uppercase tracking-[0.16em] text-red-600 transition-colors hover:bg-red-600 hover:text-white"
-                      >
-                        Delete Plant
-                      </button>
-                      <p className="md:col-span-2 text-xs text-zinc-600">
-                        {selectedPlantForDelete
-                          ? `Selected: ${selectedPlantForDelete.common_name} (${selectedPlantForDelete.scientific_name})`
-                          : deletePlantId
-                            ? "No plant found for this ID."
-                            : "Enter a Plant ID to preview the plant name before delete."}
-                      </p>
-                    </form>
+                <div className="mt-4 grid grid-cols-3 gap-2.5">
+                  <article className="rounded-[22px] border border-zinc-900/10 bg-zinc-50/85 px-3 py-3">
+                    <p className="font-mono text-[10px] uppercase tracking-[0.16em] text-zinc-500">Specimens</p>
+                    <p className="mt-2 text-[2rem] font-semibold leading-none text-zinc-950">{summary.plants}</p>
                   </article>
-
-                  <article className="flex flex-col border-t border-zinc-900/14 pt-3">
-                    <p className="font-mono text-[10px] uppercase tracking-[0.18em] text-zinc-500">Register Pathology</p>
-                    <form className="mt-3 grid gap-3 border-t border-zinc-900/14 pt-3 md:grid-cols-2" onSubmit={createDisease}>
-                      <Input name="diseaseName" placeholder="Disease name" required className="h-10 border-zinc-300 bg-white/90 focus:border-zinc-900" />
-                      <Input name="affectedSpecies" placeholder="Affected species" className="h-10 border-zinc-300 bg-white/90 focus:border-zinc-900" />
-                      <Input name="primaryPlantId" type="number" min={1} placeholder="Optional primary plant ID" className="h-10 border-zinc-300 bg-white/90 focus:border-zinc-900 md:col-span-2" />
-                      <div className="md:col-span-2">
-                        <Label htmlFor="diseaseJsonUpload" className="mb-2 block font-mono text-[10px] uppercase tracking-[0.16em] text-zinc-500">
-                          Disease JSON Source
-                        </Label>
-                        <div className="grid gap-3 md:grid-cols-2">
-                          <Input id="diseaseJsonUpload" name="jsonFileUpload" type="file" accept="application/json,.json" className="h-10 bg-white/90" />
-                          <Input
-                            id="diseaseJsonPath"
-                            name="jsonFile"
-                            placeholder="or enter existing disease JSON path"
-                            className="h-10 border-zinc-300 bg-white/90 focus:border-zinc-900"
-                          />
-                        </div>
-                      </div>
-                      <Textarea name="diseaseDescription" placeholder="Description" required className="min-h-[58px] border-zinc-300 bg-white/90 focus:border-zinc-900" />
-                      <Textarea name="symptoms" placeholder="Symptoms" required className="min-h-[58px] border-zinc-300 bg-white/90 focus:border-zinc-900" />
-                      <Textarea name="causes" placeholder="Causes" required className="min-h-[58px] border-zinc-300 bg-white/90 focus:border-zinc-900" />
-                      <Textarea
-                        name="preventionMethods"
-                        placeholder="Prevention methods"
-                        required
-                        className="min-h-[58px] border-zinc-300 bg-white/90 focus:border-zinc-900"
-                      />
-                      <Textarea
-                        name="treatmentMethods"
-                        placeholder="Treatment methods"
-                        required
-                        className="min-h-[58px] border-zinc-300 bg-white/90 focus:border-zinc-900"
-                      />
-                      <Input name="severityLevel" placeholder="Severity level (High/Med/Low)" required className="h-10 border-zinc-300 bg-white/90 focus:border-zinc-900" />
-
-                      <button
-                        type="submit"
-                        className="md:col-span-2 inline-flex h-10 items-center justify-center rounded-full bg-zinc-900 px-5 font-mono text-xs uppercase tracking-[0.16em] text-white transition-colors hover:bg-black"
-                      >
-                        Create Disease Entry
-                      </button>
-                    </form>
-
-                    <form className="mt-4 grid gap-3 border-t border-zinc-900/14 pt-3 md:grid-cols-[1fr_auto]" onSubmit={deleteDisease}>
-                      <Input
-                        name="diseaseId"
-                        type="number"
-                        min={1}
-                        placeholder="Disease ID to delete"
-                        required
-                        className="h-10 border-zinc-300 bg-white/90 focus:border-zinc-900"
-                      />
-                      <Input
-                        name="diseaseJsonFile"
-                        placeholder="Optional disease JSON path for file delete"
-                        className="h-10 border-zinc-300 bg-white/90 focus:border-zinc-900 md:col-span-2"
-                      />
-                      <label className="md:col-span-2 inline-flex items-center gap-2 text-xs text-zinc-600">
-                        <input type="checkbox" name="deleteDiseaseJson" aria-label="Delete disease JSON file" className="h-4 w-4" />
-                        Also delete the JSON file path above
-                      </label>
-                      <button
-                        type="submit"
-                        className="inline-flex h-10 items-center justify-center rounded-full border border-red-600 px-5 font-mono text-xs uppercase tracking-[0.16em] text-red-600 transition-colors hover:bg-red-600 hover:text-white"
-                      >
-                        Delete Disease
-                      </button>
-                    </form>
+                  <article className="rounded-[22px] border border-zinc-900/10 bg-zinc-50/85 px-3 py-3">
+                    <p className="font-mono text-[10px] uppercase tracking-[0.16em] text-zinc-500">Pathologies</p>
+                    <p className="mt-2 text-[2rem] font-semibold leading-none text-zinc-950">{summary.diseases}</p>
                   </article>
-
-                  <article className="flex flex-col border-t border-zinc-900/14 pt-3">
-                    <div className="flex items-center justify-between gap-3">
-                      <p className="font-mono text-[10px] uppercase tracking-[0.18em] text-zinc-500">Catalog Sync & Relations</p>
-                      <button
-                        type="button"
-                        onClick={syncCatalog}
-                        className="inline-flex h-9 items-center justify-center rounded-full bg-zinc-900 px-4 font-mono text-[10px] uppercase tracking-[0.16em] text-white transition-colors hover:bg-black"
-                      >
-                        Sync JSON To DB
-                      </button>
-                    </div>
-
-                    <div className="mt-3 grid gap-4 border-t border-zinc-900/14 pt-3 md:grid-cols-2">
-                      <form className="grid gap-3" onSubmit={linkPlantDisease}>
-                        <p className="font-mono text-[10px] uppercase tracking-[0.16em] text-zinc-500">Link Plant + Disease</p>
-                        <Input
-                          name="relationPlantId"
-                          type="number"
-                          min={1}
-                          placeholder="Plant ID"
-                          required
-                          className="h-10 border-zinc-300 bg-white/90 focus:border-zinc-900"
-                        />
-                        <Input
-                          name="relationDiseaseId"
-                          type="number"
-                          min={1}
-                          placeholder="Disease ID"
-                          required
-                          className="h-10 border-zinc-300 bg-white/90 focus:border-zinc-900"
-                        />
-                        <select
-                          name="relationType"
-                          defaultValue="common"
-                          aria-label="Relation type"
-                          className="h-10 rounded-md border border-zinc-300 bg-white/90 px-3 text-xs font-mono uppercase tracking-[0.12em] text-zinc-700 focus:border-zinc-900 focus:outline-none"
-                        >
-                          <option value="common">Common</option>
-                          <option value="primary">Primary</option>
-                          <option value="possible">Possible</option>
-                        </select>
-                        <button
-                          type="submit"
-                          className="inline-flex h-10 items-center justify-center rounded-full border border-zinc-900 px-5 font-mono text-xs uppercase tracking-[0.16em] text-zinc-900 transition-colors hover:bg-zinc-900 hover:text-white"
-                        >
-                          Save Link
-                        </button>
-                      </form>
-
-                      <form className="grid gap-3" onSubmit={unlinkPlantDisease}>
-                        <p className="font-mono text-[10px] uppercase tracking-[0.16em] text-zinc-500">Unlink Plant + Disease</p>
-                        <Input
-                          name="unlinkPlantId"
-                          type="number"
-                          min={1}
-                          placeholder="Plant ID"
-                          required
-                          className="h-10 border-zinc-300 bg-white/90 focus:border-zinc-900"
-                        />
-                        <Input
-                          name="unlinkDiseaseId"
-                          type="number"
-                          min={1}
-                          placeholder="Disease ID"
-                          required
-                          className="h-10 border-zinc-300 bg-white/90 focus:border-zinc-900"
-                        />
-                        <button
-                          type="submit"
-                          className="inline-flex h-10 items-center justify-center rounded-full border border-red-600 px-5 font-mono text-xs uppercase tracking-[0.16em] text-red-600 transition-colors hover:bg-red-600 hover:text-white"
-                        >
-                          Remove Link
-                        </button>
-                      </form>
-                    </div>
+                  <article className="rounded-[22px] border border-zinc-900/10 bg-zinc-50/85 px-3 py-3">
+                    <p className="font-mono text-[10px] uppercase tracking-[0.16em] text-zinc-500">Scans</p>
+                    <p className="mt-2 text-[2rem] font-semibold leading-none text-zinc-950">{summary.scans}</p>
                   </article>
+                </div>
 
-                  <article className="flex flex-col border-t border-zinc-900/14 pt-3">
-                    <div className="flex items-center justify-between gap-3">
-                      <p className="font-mono text-[10px] uppercase tracking-[0.18em] text-zinc-500">Recent Scans</p>
-                      <p className="font-mono text-[10px] uppercase tracking-[0.16em] text-zinc-500">Latest 20</p>
-                    </div>
-                    <div className="mt-3 border-t border-zinc-900/14 pt-3">
-                      {stats && stats.recentUploads.length > 0 ? (
-                        <div className="w-full overflow-x-auto">
-                          <Table>
-                            <TableHeader>
-                              <TableRow className="border-zinc-900/10">
-                                <TableHead className="font-mono text-[10px] uppercase tracking-[0.16em] text-zinc-500">Plant</TableHead>
-                                <TableHead className="font-mono text-[10px] uppercase tracking-[0.16em] text-zinc-500">Pathology</TableHead>
-                                <TableHead className="font-mono text-[10px] uppercase tracking-[0.16em] text-zinc-500">Visual</TableHead>
-                                <TableHead className="font-mono text-[10px] uppercase tracking-[0.16em] text-zinc-500">Timestamp</TableHead>
-                              </TableRow>
-                            </TableHeader>
-                            <TableBody>
-                              {stats.recentUploads.map((upload) => (
-                                <TableRow key={upload.scan_id} className="border-zinc-900/10">
-                                  <TableCell className="font-medium text-zinc-800">{upload.plant_name || "-"}</TableCell>
-                                  <TableCell className={upload.disease_name ? "text-red-600" : "text-zinc-500"}>
-                                    {upload.disease_name || "Healthy"}
-                                  </TableCell>
-                                  <TableCell>
-                                    {upload.image_url ? (
-                                      <Image
-                                        src={toAssetUrl(upload.image_url)}
-                                        alt="Scan thumbnail"
-                                        width={44}
-                                        height={44}
-                                        className="h-11 w-11 rounded-md border border-zinc-200 object-cover"
-                                        sizes="44px"
-                                      />
-                                    ) : (
-                                      "-"
-                                    )}
-                                  </TableCell>
-                                  <TableCell className="font-mono text-xs text-zinc-500">{new Date(upload.created_at).toLocaleString()}</TableCell>
-                                </TableRow>
-                              ))}
-                            </TableBody>
-                          </Table>
-                        </div>
+                <div className="mt-4 flex min-h-0 flex-1 flex-col gap-4 overflow-hidden">
+                  <article className="flex min-h-[13rem] min-w-0 flex-1 flex-col rounded-[24px] border border-zinc-900/10 bg-zinc-50/85 p-4">
+                    <p className="font-mono text-[10px] uppercase tracking-[0.16em] text-zinc-500">Recent Uploads</p>
+                    <div className="mt-3 min-h-0 flex-1 space-y-3 overflow-y-auto pr-1">
+                      {stats?.recentUploads?.slice(0, 4).length ? (
+                        stats.recentUploads.slice(0, 4).map((upload) => (
+                          <div key={upload.scan_id} className="flex items-center gap-3 rounded-[18px] border border-zinc-900/10 bg-white px-3 py-2.5">
+                            {upload.image_url ? (
+                              <Image
+                                src={toAssetUrl(upload.image_url)}
+                                alt="Scan thumbnail"
+                                width={42}
+                                height={42}
+                                className="h-10 w-10 rounded-xl object-cover"
+                                sizes="42px"
+                              />
+                            ) : (
+                              <div className="grid h-10 w-10 place-items-center rounded-xl bg-zinc-100 text-[10px] font-mono uppercase text-zinc-400">
+                                N/A
+                              </div>
+                            )}
+                            <div className="min-w-0">
+                              <p className="truncate text-sm font-medium text-zinc-900">{upload.plant_name || "Unknown specimen"}</p>
+                              <p className="truncate text-xs text-zinc-500">{upload.disease_name || "Healthy"}</p>
+                            </div>
+                          </div>
+                        ))
                       ) : (
-                        <p className="text-sm text-zinc-500">No recent scans available.</p>
+                        <p className="text-sm text-zinc-500">No recent uploads yet.</p>
                       )}
                     </div>
                   </article>
 
-                  <article className="flex flex-col border-t border-zinc-900/14 pt-3">
-                    <p className="font-mono text-[10px] uppercase tracking-[0.18em] text-zinc-500">User Database</p>
-                    <div className="mt-3 border-t border-zinc-900/14 pt-3">
-                      <div className="w-full overflow-x-auto">
-                        <Table>
-                          <TableHeader>
-                            <TableRow className="border-zinc-900/10">
-                              <TableHead className="font-mono text-[10px] uppercase tracking-[0.16em] text-zinc-500">Name</TableHead>
-                              <TableHead className="font-mono text-[10px] uppercase tracking-[0.16em] text-zinc-500">Email</TableHead>
-                              <TableHead className="font-mono text-[10px] uppercase tracking-[0.16em] text-zinc-500">Role</TableHead>
-                              <TableHead className="font-mono text-[10px] uppercase tracking-[0.16em] text-zinc-500">Status</TableHead>
-                            </TableRow>
-                          </TableHeader>
-                          <TableBody>
-                            {users.map((user) => (
-                              <TableRow key={user.user_id} className="border-zinc-900/10">
-                                <TableCell className="font-medium text-zinc-800">{user.full_name}</TableCell>
-                                <TableCell className="text-zinc-500">{user.email}</TableCell>
-                                <TableCell>
-                                  <select
-                                    defaultValue={user.role}
-                                    aria-label={`Role for ${user.full_name}`}
-                                    className="rounded border border-zinc-300 bg-white px-2 py-1 text-xs font-mono uppercase focus:border-zinc-900 focus:outline-none"
-                                    onChange={(event) => {
-                                      updateUser(user.user_id, { role: event.target.value as "user" | "admin" });
-                                    }}
-                                  >
-                                    <option value="user">User</option>
-                                    <option value="admin">Admin</option>
-                                  </select>
-                                </TableCell>
-                                <TableCell>
-                                  <select
-                                    defaultValue={user.account_status}
-                                    aria-label={`Account status for ${user.full_name}`}
-                                    className="rounded border border-zinc-300 bg-white px-2 py-1 text-xs font-mono uppercase focus:border-zinc-900 focus:outline-none"
-                                    onChange={(event) => {
-                                      updateUser(user.user_id, {
-                                        accountStatus: event.target.value as "active" | "inactive" | "suspended"
-                                      });
-                                    }}
-                                  >
-                                    <option value="active">Active</option>
-                                    <option value="inactive">Inactive</option>
-                                    <option value="suspended">Suspended</option>
-                                  </select>
-                                </TableCell>
-                              </TableRow>
-                            ))}
-                          </TableBody>
-                        </Table>
-                      </div>
-                    </div>
+                  <article className="shrink-0 rounded-[24px] border border-zinc-900/10 bg-zinc-50/85 px-4 py-4 text-sm leading-relaxed text-zinc-600">
+                    <p className="font-mono text-[10px] uppercase tracking-[0.16em] text-zinc-500">Mode</p>
+                    <p className="mt-3">Administrator privileges are active. Catalog creation, deletion, sync, relations, upload review, and user access controls remain available.</p>
                   </article>
                 </div>
-              </div>
-            </div>
-          </motion.aside>
+              </motion.aside>
+            }
+          />
         </div>
 
         {status && (

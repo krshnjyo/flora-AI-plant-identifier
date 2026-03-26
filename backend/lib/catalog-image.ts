@@ -53,6 +53,11 @@ export function resolvePreferredImageUrl(
     declaredImageUrl?: string | null;
   } = {}
 ) {
+  const declared = options.declaredImageUrl || null;
+  if (declared && index.byPath.has(declared)) {
+    return declared;
+  }
+
   const aliases = options.aliases || [];
   const candidates = [primaryName, ...aliases]
     .map((value) => normalizeStem(value))
@@ -71,11 +76,6 @@ export function resolvePreferredImageUrl(
     if (partial) {
       return index.byStem.get(partial) || null;
     }
-  }
-
-  const declared = options.declaredImageUrl || null;
-  if (declared && index.byPath.has(declared)) {
-    return declared;
   }
 
   return null;

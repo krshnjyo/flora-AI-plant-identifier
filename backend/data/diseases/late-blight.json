@@ -1,7 +1,14 @@
 {
   "disease_name": "Late Blight",
   "affected_species": "Potato, Tomato",
-  "image_url": "/diseases/late-blight-dataset.jpg",
+  "image_url": "/gallery-result/diseases/late1.jpg",
+  "media": {
+    "gallery_images": [
+      "/gallery-result/diseases/late1.jpg",
+      "/gallery-result/diseases/late2.jpg"
+    ],
+    "video_src": "/placeholder.mp4"
+  },
   "disease_category": "Oomycete blight",
   "pathogen_type": "Phytophthora infestans",
   "affected_parts": "Leaves, stems, petioles, and tubers",

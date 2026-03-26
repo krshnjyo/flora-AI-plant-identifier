@@ -27,6 +27,10 @@ type DiseaseResponse = {
   disease_name: string;
   affected_species: string;
   image_url: string;
+  media?: {
+    gallery_images?: string[];
+    video_src?: string | null;
+  };
   disease_category: string;
   pathogen_type: string;
   affected_parts: string;
@@ -80,12 +84,45 @@ function resolveDiseaseImageUrl(
   );
 }
 
+function withDiseaseMedia(
+  base: {
+    image_url?: string | null;
+    media?: {
+      gallery_images?: string[];
+      video_src?: string | null;
+    };
+  },
+  resolvedImageUrl: string
+) {
+  const galleryImages = Array.isArray(base.media?.gallery_images)
+    ? base.media.gallery_images.filter((item): item is string => typeof item === "string" && item.trim().length > 0)
+    : [];
+  const fallbackImage = resolvedImageUrl || String(base.image_url || "");
+
+  return {
+    image_url: fallbackImage,
+    media: {
+      gallery_images: galleryImages.length ? galleryImages : fallbackImage ? [fallbackImage] : [],
+      video_src: String(base.media?.video_src || "/placeholder.mp4")
+    }
+  };
+}
+
 function withDiseaseDefaults(base: Partial<DiseaseResponse>): DiseaseResponse {
+  const galleryImages = Array.isArray(base.media?.gallery_images)
+    ? base.media?.gallery_images.filter((item): item is string => typeof item === "string" && item.trim().length > 0)
+    : [];
+  const fallbackImage = String(base.image_url || "");
+
   return {
     disease_id: Number(base.disease_id || 0),
     disease_name: String(base.disease_name || ""),
     affected_species: String(base.affected_species || ""),
     image_url: String(base.image_url || ""),
+    media: {
+      gallery_images: galleryImages.length ? galleryImages : fallbackImage ? [fallbackImage] : [],
+      video_src: String(base.media?.video_src || "/placeholder.mp4")
+    },
     disease_category: String(base.disease_category || "Plant Disease"),
     pathogen_type: String(base.pathogen_type || "Mixed pathogen complex"),
     affected_parts: String(base.affected_parts || "Leaves and stems"),
@@ -121,15 +158,14 @@ export default withMethods(["GET"], async function handler(req: NextApiRequest, 
       declaredImageUrl: jsonMatch.image_url || null
     });
 
-    return sendSuccess(
-      res,
-      withDiseaseDefaults({
-        disease_id: 0,
-        ...jsonMatch,
-        image_url: imageUrl || jsonMatch.image_url || "",
-        created_at: new Date().toISOString()
-      })
-    );
+    // When a JSON catalog entry exists, preserve its authored copy exactly.
+    // Only normalize image/media fields so the frontend can render a stable gallery.
+    return sendSuccess(res, {
+      disease_id: 0,
+      ...jsonMatch,
+      ...withDiseaseMedia(jsonMatch, imageUrl || String(jsonMatch.image_url || "")),
+      created_at: new Date().toISOString()
+    });
   }
 
   // Fallback to DB-backed resolver when local disease JSON is missing.
@@ -151,6 +187,10 @@ export default withMethods(["GET"], async function handler(req: NextApiRequest, 
           treatment_methods: dbMatch.treatment_methods,
           severity_level: dbMatch.severity_level,
           image_url: imageUrl || "",
+          media: {
+            gallery_images: imageUrl ? [imageUrl] : [],
+            video_src: "/placeholder.mp4"
+          },
           primary_plant_name: dbMatch.primary_plant_name,
           related_plants: dbMatch.linked_plant_names,
           created_at: new Date().toISOString()

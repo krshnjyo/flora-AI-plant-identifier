@@ -91,14 +91,25 @@ export default withMethods(["POST", "DELETE"], async function handler(req: NextA
   const nextAvatarUrl = `/profiles/${fileName}`;
 
   const previousAvatar = await getCurrentAvatarUrl(user.userId);
-  await getPool().execute(
-    `INSERT INTO user_profiles (user_id, avatar_url)
-     VALUES (?, ?)
-     ON DUPLICATE KEY UPDATE
-       avatar_url = VALUES(avatar_url)`,
-    [user.userId, nextAvatarUrl]
-  );
-  await cleanupAvatarFile(previousAvatar);
+  try {
+    await getPool().execute(
+      `INSERT INTO user_profiles (user_id, avatar_url)
+       VALUES (?, ?)
+       ON DUPLICATE KEY UPDATE
+         avatar_url = VALUES(avatar_url)`,
+      [user.userId, nextAvatarUrl]
+    );
+    await cleanupAvatarFile(previousAvatar);
+  } catch (error) {
+    // Avoid leaving unused profile images on disk if the DB write fails after
+    // the file has already been moved into the public profiles directory.
+    try {
+      await fs.unlink(destination);
+    } catch {
+      // Best effort cleanup only.
+    }
+    throw error;
+  }
 
   return sendSuccess(res, { avatarUrl: nextAvatarUrl });
 });

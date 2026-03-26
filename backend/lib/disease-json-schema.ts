@@ -16,6 +16,12 @@ export const diseaseResultJsonSchema = z.object({
   disease_name: z.string(),
   affected_species: z.string(),
   image_url: z.string(),
+  media: z
+    .object({
+      gallery_images: z.array(z.string()).default([]),
+      video_src: z.string().nullable().optional()
+    })
+    .optional(),
   disease_category: z.string(),
   pathogen_type: z.string(),
   affected_parts: z.string(),

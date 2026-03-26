@@ -4,20 +4,28 @@
   "scientific_name": "Solanum tuberosum",
   "species": "S. tuberosum",
   "family": "Solanaceae",
-  "image_url": "/plants/potato-dataset.jpg",
+  "image_url": "/gallery-result/plants/pot1.jpg",
+  "media": {
+    "gallery_images": [
+      "/gallery-result/plants/pot1.jpg",
+      "/gallery-result/plants/pot2.jpg",
+      "/gallery-result/plants/pot3.jpg"
+    ],
+    "video_src": "/placeholder.mp4"
+  },
   "plant_description": "The potato is a starchy tuber crop grown for edible underground storage organs.",
   "growth_conditions": {
-    "soil_requirements": "Loose, well-drained loamy soil with pH 5.0-6.5",
-    "water_requirements": "Consistent moisture with no long dry intervals",
+    "soil_requirements": "Well-drained sandy or loamy soil with pH 5.0-6.5",
+    "water_requirements": "Maintain even moisture, especially once tubers begin to form, without waterlogging the soil",
     "sunlight_requirements": "Full sun for 6-8 hours daily",
     "temperature_conditions": "Optimal growth between 15 and 21 degrees Celsius"
   },
   "watering_schedule": {
-    "frequency": "Every 2-3 days in warm periods, weekly in cooler periods",
+    "frequency": "Soak thoroughly once or twice weekly, more often in hot or very sandy conditions",
     "chart_data": [
       { "day": "Monday", "water": true },
       { "day": "Tuesday", "water": false },
-      { "day": "Wednesday", "water": true },
+      { "day": "Wednesday", "water": false },
       { "day": "Thursday", "water": false },
       { "day": "Friday", "water": true },
       { "day": "Saturday", "water": false },

@@ -97,6 +97,7 @@ export async function getCachedJson<T>(key: string): Promise<T | null> {
   try {
     return JSON.parse(memoryValue) as T;
   } catch {
+    memoryCache.delete(key);
     return null;
   }
 }

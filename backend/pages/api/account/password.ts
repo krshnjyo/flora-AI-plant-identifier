@@ -13,7 +13,7 @@ import { sendError, sendSuccess } from "@/lib/response";
 import { consumeRateLimitHybrid, getRateLimitKey, setRateLimitHeaders } from "@/lib/rate-limit";
 
 const passwordUpdateSchema = z.object({
-  currentPassword: z.string().min(8).max(72),
+  currentPassword: z.string().max(72).optional().default(""),
   newPassword: z.string().min(8).max(72)
 });
 
@@ -31,7 +31,6 @@ export default withMethods(["PUT"], async function handler(req: NextApiRequest, 
 
   const user = await requireUser(req, res);
   if (!user) return;
-
   const parsed = passwordUpdateSchema.safeParse(req.body);
   if (!parsed.success) {
     return sendError(res, "VALIDATION_ERROR", "Invalid password payload", 422, parsed.error.flatten());
@@ -46,6 +45,10 @@ export default withMethods(["PUT"], async function handler(req: NextApiRequest, 
   const current = (rows as PasswordRow[])[0];
   if (!current) {
     return sendError(res, "USER_NOT_FOUND", "User account not found", 404);
+  }
+
+  if (currentPassword.trim().length === 0) {
+    return sendError(res, "VALIDATION_ERROR", "Current password is required", 422);
   }
 
   const validCurrent = await verifyPassword(currentPassword, current.password_hash);
