@@ -33,6 +33,23 @@ const RETRYABLE_IDENTIFY_ERROR_CODES = new Set([
   "UNCERTAIN_CATALOG_MATCH",
   "IDENTIFICATION_EMPTY"
 ]);
+const IDENTIFY_TIMEOUT_MS = 90_000;
+
+function describeIdentifyNetworkError(error: unknown) {
+  if (!(error instanceof Error)) {
+    return "Identification request failed";
+  }
+
+  if (error.name === "AbortError") {
+    return "Identification timed out while waiting for the backend/model service. Render cold starts can take a while";
+  }
+
+  if (/load failed|failed to fetch|networkerror/i.test(error.message)) {
+    return "Could not reach the deployed backend. Check Vercel `NEXT_PUBLIC_API_BASE_URL`, Render `CORS_ORIGIN`, and that the model service URL is reachable from the backend";
+  }
+
+  return error.message || "Identification request failed";
+}
 
 export default function IdentifyPage() {
   const router = useRouter();
@@ -104,7 +121,8 @@ export default function IdentifyPage() {
         unresolved_disease_detected?: boolean;
       }>("/api/identify", {
         method: "POST",
-        body: formData
+        body: formData,
+        timeoutMs: IDENTIFY_TIMEOUT_MS
       });
 
       if (!response.ok || !json?.success) {
@@ -181,8 +199,7 @@ export default function IdentifyPage() {
       const smartTarget = plantName || identifiedName;
       navigateWithFloraTransition(router, `/results/plant/${encodeURIComponent(smartTarget)}`);
     } catch (error) {
-      const message = error instanceof Error ? error.message : "Identification request failed";
-      setError(message + ". Check backend and model services.");
+      setError(`${describeIdentifyNetworkError(error)}.`);
     } finally {
       setLoading(false);
     }

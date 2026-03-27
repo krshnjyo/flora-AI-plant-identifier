@@ -1,0 +1,37 @@
+services:
+  - type: web
+    name: flora-backend
+    env: node
+    rootDir: backend
+    buildCommand: npm install && npm run build
+    startCommand: npm run start
+    healthCheckPath: /api/health
+    autoDeploy: true
+    envVars:
+      - key: DATABASE_URL
+        sync: false
+      - key: JWT_SECRET
+        sync: false
+      - key: CORS_ORIGIN
+        sync: false
+      - key: LOCAL_MODEL_ENDPOINT
+        sync: false
+      - key: AUTH_COOKIE_SAMESITE
+        value: none
+      - key: JWT_ISSUER
+        value: flora-api
+      - key: JWT_AUDIENCE
+        value: flora-client
+  - type: web
+    name: flora-model
+    env: python
+    rootDir: .
+    buildCommand: pip install -r plant_ai/requirements.txt
+    startCommand: gunicorn --bind 0.0.0.0:$PORT --timeout 180 --workers 1 --chdir plant_ai/model_service app:app
+    healthCheckPath: /health
+    autoDeploy: true
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.11
+      - key: MIN_LEAF_LIKELIHOOD
+        value: "0.02"

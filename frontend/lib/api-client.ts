@@ -32,6 +32,10 @@ type ApiResponseShape<T> =
       error?: ApiError;
     };
 
+export type ApiRequestInit = RequestInit & {
+  timeoutMs?: number;
+};
+
 function normalizePath(path: string) {
   return path.startsWith("/") ? path : `/${path}`;
 }
@@ -144,9 +148,10 @@ async function fetchWithOptionalTimeout(url: string, init: RequestInit, timeoutM
   }
 }
 
-export async function apiFetch(path: string, init: RequestInit = {}) {
+export async function apiFetch(path: string, init: ApiRequestInit = {}) {
   const normalized = normalizePath(path);
   const bases = resolveApiBases();
+  const { timeoutMs = DEFAULT_TIMEOUT_MS, ...fetchInit } = init;
   let lastError: unknown = null;
 
   if (bases.length === 0) {
@@ -158,11 +163,11 @@ export async function apiFetch(path: string, init: RequestInit = {}) {
       const response = await fetchWithOptionalTimeout(
         `${base}${normalized}`,
         {
-          ...init,
-          headers: init.headers,
+          ...fetchInit,
+          headers: fetchInit.headers,
           credentials: "include"
         },
-        DEFAULT_TIMEOUT_MS
+        timeoutMs
       );
       preferredApiBase = base;
       return response;
@@ -180,7 +185,7 @@ export async function apiFetch(path: string, init: RequestInit = {}) {
 /**
  * Fetch an API route and parse JSON with a consistent fallback shape.
  */
-export async function apiFetchJson<T>(path: string, init: RequestInit = {}) {
+export async function apiFetchJson<T>(path: string, init: ApiRequestInit = {}) {
   const response = await apiFetch(path, init);
   let json: ApiResponseShape<T> | null = null;
 
