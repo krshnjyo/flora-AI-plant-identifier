@@ -30,6 +30,10 @@ type ProfileRow = {
   incident_alerts: number | null;
 };
 
+function isDuplicateEntryError(error: unknown) {
+  return ["ER_DUP_ENTRY", "23505"].includes((error as { code?: string }).code || "");
+}
+
 const outputModeSchema = z.enum(["smart", "species", "disease"]);
 const auditRetentionSchema = z.union([z.literal(30), z.literal(90), z.literal(365)]);
 
@@ -185,33 +189,33 @@ export default withMethods(["GET", "PUT"], async function handler(req: NextApiRe
          incident_alerts
        )
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-       ON DUPLICATE KEY UPDATE
-         bio = VALUES(bio),
-         default_output = VALUES(default_output),
-         scan_notifications = VALUES(scan_notifications),
-         email_notifications = VALUES(email_notifications),
-         login_alerts = VALUES(login_alerts),
-         two_factor_enabled = VALUES(two_factor_enabled),
-         allow_model_fallback = VALUES(allow_model_fallback),
-         audit_retention_days = VALUES(audit_retention_days),
-         incident_alerts = VALUES(incident_alerts)`,
+       ON CONFLICT (user_id) DO UPDATE SET
+         bio = EXCLUDED.bio,
+         default_output = EXCLUDED.default_output,
+         scan_notifications = EXCLUDED.scan_notifications,
+         email_notifications = EXCLUDED.email_notifications,
+         login_alerts = EXCLUDED.login_alerts,
+         two_factor_enabled = EXCLUDED.two_factor_enabled,
+         allow_model_fallback = EXCLUDED.allow_model_fallback,
+         audit_retention_days = EXCLUDED.audit_retention_days,
+         incident_alerts = EXCLUDED.incident_alerts`,
       [
         user.userId,
         nextBio,
         nextPreferences.defaultOutput,
-        nextPreferences.scanNotifications ? 1 : 0,
-        nextPreferences.emailNotifications ? 1 : 0,
-        nextPreferences.loginAlerts ? 1 : 0,
-        nextPreferences.twoFactorEnabled ? 1 : 0,
-        nextPreferences.allowModelFallback ? 1 : 0,
+        nextPreferences.scanNotifications,
+        nextPreferences.emailNotifications,
+        nextPreferences.loginAlerts,
+        nextPreferences.twoFactorEnabled,
+        nextPreferences.allowModelFallback,
         nextPreferences.auditRetentionDays,
-        nextPreferences.incidentAlerts ? 1 : 0
+        nextPreferences.incidentAlerts
       ]
     );
     await connection.commit();
   } catch (error) {
     await connection.rollback();
-    if ((error as { code?: string }).code === "ER_DUP_ENTRY") {
+    if (isDuplicateEntryError(error)) {
       return sendError(res, "EMAIL_EXISTS", "Email already registered", 409);
     }
     throw error;

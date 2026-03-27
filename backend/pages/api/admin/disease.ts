@@ -104,7 +104,7 @@ async function resolvePrimaryPlantId(affectedSpecies: string, explicitPrimaryPla
     if (row?.plant_id) return row.plant_id;
   } catch (error) {
     const code = (error as { code?: string }).code || "";
-    if (!["ER_BAD_FIELD_ERROR", "ER_PARSE_ERROR"].includes(code)) {
+    if (!["ER_BAD_FIELD_ERROR", "ER_PARSE_ERROR", "42703", "42601"].includes(code)) {
       throw error;
     }
 
@@ -125,7 +125,7 @@ async function resolvePrimaryPlantId(affectedSpecies: string, explicitPrimaryPla
 }
 
 function isProcedureMismatchError(error: unknown) {
-  return ["ER_SP_DOES_NOT_EXIST", "ER_SP_WRONG_NO_OF_ARGS", "ER_BAD_FIELD_ERROR"].includes(
+  return ["ER_SP_DOES_NOT_EXIST", "ER_SP_WRONG_NO_OF_ARGS", "ER_BAD_FIELD_ERROR", "42703", "42883"].includes(
     (error as { code?: string }).code || ""
   );
 }
@@ -162,16 +162,16 @@ async function upsertDiseaseDirect(
          primary_plant_id
        )
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-       ON DUPLICATE KEY UPDATE
-         affected_species = VALUES(affected_species),
-         disease_description = VALUES(disease_description),
-         symptoms = VALUES(symptoms),
-         causes = VALUES(causes),
-         prevention_methods = VALUES(prevention_methods),
-         treatment_methods = VALUES(treatment_methods),
-         severity_level = VALUES(severity_level),
-         json_file = VALUES(json_file),
-         primary_plant_id = VALUES(primary_plant_id)`,
+       ON CONFLICT (disease_name) DO UPDATE SET
+         affected_species = EXCLUDED.affected_species,
+         disease_description = EXCLUDED.disease_description,
+         symptoms = EXCLUDED.symptoms,
+         causes = EXCLUDED.causes,
+         prevention_methods = EXCLUDED.prevention_methods,
+         treatment_methods = EXCLUDED.treatment_methods,
+         severity_level = EXCLUDED.severity_level,
+         json_file = EXCLUDED.json_file,
+         primary_plant_id = EXCLUDED.primary_plant_id`,
       [
         diseaseName,
         affectedSpecies,
@@ -235,7 +235,7 @@ async function upsertDiseaseWithFallback(
   primaryPlantId: number | null
 ) {
   try {
-    await callAdminDiseaseProcedure("CALL sp_upsert_disease(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", [
+    await callAdminDiseaseProcedure("SELECT sp_upsert_disease(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", [
       diseaseId,
       diseaseName,
       affectedSpecies,
@@ -270,7 +270,7 @@ async function upsertDiseaseWithFallback(
 
 async function deleteDiseaseWithFallback(diseaseId: number) {
   try {
-    await callAdminDiseaseProcedure("CALL sp_delete_disease(?)", [diseaseId]);
+    await callAdminDiseaseProcedure("SELECT sp_delete_disease(?)", [diseaseId]);
   } catch (error) {
     if (!isProcedureMismatchError(error)) {
       throw error;

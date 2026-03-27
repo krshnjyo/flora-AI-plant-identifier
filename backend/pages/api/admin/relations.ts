@@ -63,9 +63,9 @@ export default withMethods(["POST", "DELETE"], async function handler(req: NextA
     await getPool().execute(
       `INSERT INTO plant_disease_map (plant_id, disease_id, relation_type, source)
        VALUES (?, ?, ?, ?)
-       ON DUPLICATE KEY UPDATE
-         relation_type = VALUES(relation_type),
-         source = VALUES(source)`,
+       ON CONFLICT (plant_id, disease_id) DO UPDATE SET
+         relation_type = EXCLUDED.relation_type,
+         source = EXCLUDED.source`,
       [parsed.data.plantId, parsed.data.diseaseId, parsed.data.relationType, parsed.data.source]
     );
 

@@ -10,9 +10,9 @@
  * - Designed for reuse by multiple features to enforce single-source behavior
  */
 
-import type { Pool } from "mysql2/promise";
+import type { DatabasePool } from "@/lib/db";
 import { buildLowercaseCandidates, buildNameCandidates, normalizeIdentifiedName } from "@/lib/name-normalization";
-import { toSqlBooleanFullText } from "@/lib/search";
+import { toSqlContainsPattern } from "@/lib/search";
 import { scoreTextSimilarity } from "@/lib/resolver-scoring";
 
 export type ResolvedPlantMatch = {
@@ -44,11 +44,11 @@ function normalizeText(value: string) {
   return normalizeIdentifiedName(value).toLowerCase();
 }
 
-async function runAdvancedPlantQuery(pool: Pool, searchCandidates: string[]) {
+async function runAdvancedPlantQuery(pool: DatabasePool, searchCandidates: string[]) {
   const whereClause = searchCandidates
     .map(
       () =>
-        "(p.common_name_norm = ? OR p.scientific_name_norm = ? OR p.species_norm = ? OR pa.alias_name_norm = ? OR p.common_name_norm LIKE ? OR p.scientific_name_norm LIKE ? OR p.species_norm LIKE ? OR pa.alias_name_norm LIKE ? OR (? <> '' AND MATCH(p.common_name, p.scientific_name, p.species) AGAINST (? IN BOOLEAN MODE)))"
+        "(p.common_name_norm = ? OR p.scientific_name_norm = ? OR p.species_norm = ? OR pa.alias_name_norm = ? OR p.common_name ILIKE ? ESCAPE '\\' OR p.scientific_name ILIKE ? ESCAPE '\\' OR p.species ILIKE ? ESCAPE '\\' OR pa.alias_name ILIKE ? ESCAPE '\\')"
     )
     .join(" OR ");
 
@@ -61,18 +61,15 @@ async function runAdvancedPlantQuery(pool: Pool, searchCandidates: string[]) {
 
   const params: string[] = [];
   for (const candidate of searchCandidates) {
-    const fullText = toSqlBooleanFullText(candidate);
     params.push(
       candidate,
       candidate,
       candidate,
       candidate,
-      `%${candidate}%`,
-      `%${candidate}%`,
-      `%${candidate}%`,
-      `%${candidate}%`,
-      fullText,
-      fullText
+      toSqlContainsPattern(candidate),
+      toSqlContainsPattern(candidate),
+      toSqlContainsPattern(candidate),
+      toSqlContainsPattern(candidate)
     );
   }
 
@@ -80,9 +77,12 @@ async function runAdvancedPlantQuery(pool: Pool, searchCandidates: string[]) {
   return rows as PlantCandidateRow[];
 }
 
-async function runLegacyPlantQuery(pool: Pool, searchCandidates: string[]) {
+async function runLegacyPlantQuery(pool: DatabasePool, searchCandidates: string[]) {
   const whereClause = searchCandidates
-    .map(() => "(LOWER(common_name) = ? OR LOWER(scientific_name) = ? OR LOWER(species) = ? OR LOWER(common_name) LIKE ? OR LOWER(scientific_name) LIKE ? OR LOWER(species) LIKE ?)")
+    .map(
+      () =>
+        "(LOWER(common_name) = ? OR LOWER(scientific_name) = ? OR LOWER(species) = ? OR common_name ILIKE ? ESCAPE '\\' OR scientific_name ILIKE ? ESCAPE '\\' OR species ILIKE ? ESCAPE '\\')"
+    )
     .join(" OR ");
 
   const sql = `SELECT plant_id, common_name, scientific_name, species, confidence_score, json_file,
@@ -93,7 +93,14 @@ async function runLegacyPlantQuery(pool: Pool, searchCandidates: string[]) {
 
   const params: string[] = [];
   for (const candidate of searchCandidates) {
-    params.push(candidate, candidate, candidate, `%${candidate}%`, `%${candidate}%`, `%${candidate}%`);
+    params.push(
+      candidate,
+      candidate,
+      candidate,
+      toSqlContainsPattern(candidate),
+      toSqlContainsPattern(candidate),
+      toSqlContainsPattern(candidate)
+    );
   }
 
   const [rows] = await pool.execute(sql, params);
@@ -162,7 +169,7 @@ function scorePlant(candidate: PlantAggregate, searchCandidates: string[]) {
   return { score, matchedAlias };
 }
 
-export async function resolvePlantMatch(pool: Pool, label: string) {
+export async function resolvePlantMatch(pool: DatabasePool, label: string) {
   const searchCandidates = buildLowercaseCandidates(buildNameCandidates(label));
   if (searchCandidates.length === 0) {
     return null;
@@ -173,7 +180,7 @@ export async function resolvePlantMatch(pool: Pool, label: string) {
     rows = (await runAdvancedPlantQuery(pool, searchCandidates));
   } catch (error) {
     const code = (error as { code?: string }).code || "";
-    if (["ER_NO_SUCH_TABLE", "ER_BAD_FIELD_ERROR", "ER_PARSE_ERROR"].includes(code)) {
+    if (["ER_NO_SUCH_TABLE", "ER_BAD_FIELD_ERROR", "ER_PARSE_ERROR", "42P01", "42703", "42601"].includes(code)) {
       rows = await runLegacyPlantQuery(pool, searchCandidates);
     } else {
       throw error;

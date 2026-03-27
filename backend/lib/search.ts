@@ -41,17 +41,10 @@ export function toSqlContainsPattern(value: string): string {
 }
 
 /**
- * Build a boolean full-text query from normalized user input.
+ * Escape a normalized token for literal case-insensitive pattern matching.
  *
- * Example:
- * - "late blight" -> "+late* +blight*"
+ * Why this exists:
+ * - PostgreSQL `ILIKE` and `LIKE` still treat `%` and `_` as wildcards.
+ * - Search endpoints use this helper instead of database-specific fulltext
+ *   syntax so matching stays portable during the PostgreSQL migration.
  */
-export function toSqlBooleanFullText(value: string): string {
-  const tokens = value
-    .split(" ")
-    .map((token) => token.trim())
-    .filter((token) => token.length >= 2)
-    .slice(0, 8);
-
-  return tokens.map((token) => `+${token}*`).join(" ");
-}

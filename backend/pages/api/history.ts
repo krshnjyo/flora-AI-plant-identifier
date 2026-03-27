@@ -72,14 +72,14 @@ export default withMethods(["GET"], async function handler(req: NextApiRequest, 
     ),
     pool.execute(
       `SELECT
-         COUNT(*) AS total,
-         COALESCE(SUM(disease_name IS NOT NULL AND disease_name <> ''), 0) AS with_disease
+         COUNT(*)::int AS total,
+         COUNT(*) FILTER (WHERE disease_name IS NOT NULL AND disease_name <> '')::int AS with_disease
        FROM scan_history
        WHERE user_id = ?`,
       [user.userId]
     ),
     pool.execute(
-      `SELECT disease_name, COUNT(*) AS count
+      `SELECT disease_name, COUNT(*)::int AS count
        FROM scan_history
        WHERE user_id = ?
          AND disease_name IS NOT NULL

@@ -7,9 +7,9 @@
  * newly created user gets the companion `user_profiles` row immediately.
  */
 
-import type { Pool, PoolConnection } from "mysql2/promise";
+import type { DatabaseConnection, DatabasePool } from "@/lib/db";
 
-type DbExecutor = Pool | PoolConnection;
+type DbExecutor = DatabasePool | DatabaseConnection;
 
 /**
  * Create the companion profile row if it does not exist yet.
@@ -23,7 +23,7 @@ export async function createDefaultUserProfile(executor: DbExecutor, userId: num
   await executor.execute(
     `INSERT INTO user_profiles (user_id)
      VALUES (?)
-     ON DUPLICATE KEY UPDATE user_id = user_id`,
+     ON CONFLICT (user_id) DO NOTHING`,
     [userId]
   );
 }

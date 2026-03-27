@@ -18,7 +18,7 @@ import { withMethods } from "@/lib/api-handler";
 import { getPool } from "@/lib/db";
 import { listDiseaseJsonCatalog } from "@/lib/disease-json";
 import { sendSuccess } from "@/lib/response";
-import { normalizeSearchTerm, toSqlBooleanFullText, toSqlContainsPattern } from "@/lib/search";
+import { normalizeSearchTerm, toSqlContainsPattern } from "@/lib/search";
 import { backendPath } from "@/lib/backend-root";
 import { buildVersionedCacheKey, getCachedJson, setCachedJson } from "@/lib/request-cache";
 import { buildPublicImageIndex, type PublicImageIndex, resolvePreferredImageUrl } from "@/lib/catalog-image";
@@ -84,7 +84,6 @@ export default withMethods(["GET"], async function handler(req: NextApiRequest, 
     );
   }
   const searchPattern = toSqlContainsPattern(search);
-  const fullTextQuery = toSqlBooleanFullText(search);
   const [catalog, imageIndexes] = await Promise.all([listDiseaseJsonCatalog(), getPublicDiseaseImageIndexes()]);
   const imageByJsonFile = new Map<string, string>();
   const catalogRows = catalog
@@ -109,11 +108,14 @@ export default withMethods(["GET"], async function handler(req: NextApiRequest, 
     const [rows] = await getPool().execute(
       `SELECT disease_id, disease_name, affected_species, severity_level, json_file
        FROM plant_diseases
-       WHERE (? = '' OR disease_name_norm LIKE ? ESCAPE '\\'
-          OR (? <> '' AND MATCH(disease_name, affected_species, disease_description, symptoms, causes) AGAINST (? IN BOOLEAN MODE)))
+       WHERE (? = '' OR disease_name ILIKE ? ESCAPE '\\'
+          OR affected_species ILIKE ? ESCAPE '\\'
+          OR disease_description ILIKE ? ESCAPE '\\'
+          OR symptoms ILIKE ? ESCAPE '\\'
+          OR causes ILIKE ? ESCAPE '\\')
        ORDER BY disease_name ASC
        LIMIT ${MAX_DISEASE_LIST_ROWS}`,
-      [search, searchPattern, fullTextQuery, fullTextQuery]
+      [search, searchPattern, searchPattern, searchPattern, searchPattern, searchPattern]
     );
 
     const dbRowsRaw = rows as DiseaseListRow[];

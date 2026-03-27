@@ -14,7 +14,7 @@ import { withMethods } from "@/lib/api-handler";
 import { getPool } from "@/lib/db";
 import { listPlantJsonCatalog } from "@/lib/plant-json";
 import { sendSuccess } from "@/lib/response";
-import { normalizeSearchTerm, toSqlBooleanFullText, toSqlContainsPattern } from "@/lib/search";
+import { normalizeSearchTerm, toSqlContainsPattern } from "@/lib/search";
 import { backendPath } from "@/lib/backend-root";
 import { buildVersionedCacheKey, getCachedJson, setCachedJson } from "@/lib/request-cache";
 import { buildPublicImageIndex, type PublicImageIndex, resolvePreferredImageUrl } from "@/lib/catalog-image";
@@ -121,7 +121,6 @@ export default withMethods(["GET"], async function handler(req: NextApiRequest, 
     return sendSuccess(res, cached);
   }
   const searchPattern = toSqlContainsPattern(search);
-  const fullTextQuery = toSqlBooleanFullText(search);
   const catalog = await buildCatalogSnapshot(search);
   const catalogPlants = catalog.items;
   const allowedCatalogKeys = new Set(catalogPlants.map((item) => normalizeSearchTerm(item.common_name)));
@@ -130,13 +129,12 @@ export default withMethods(["GET"], async function handler(req: NextApiRequest, 
     const [rows] = await getPool().execute(
       `SELECT plant_id, common_name, scientific_name, species, confidence_score, json_file
        FROM plants
-       WHERE (? = '' OR common_name_norm LIKE ? ESCAPE '\\'
-          OR scientific_name_norm LIKE ? ESCAPE '\\'
-          OR species_norm LIKE ? ESCAPE '\\'
-          OR (? <> '' AND MATCH(common_name, scientific_name, species) AGAINST (? IN BOOLEAN MODE)))
+       WHERE (? = '' OR common_name ILIKE ? ESCAPE '\\'
+          OR scientific_name ILIKE ? ESCAPE '\\'
+          OR species ILIKE ? ESCAPE '\\')
        ORDER BY common_name ASC
        LIMIT 100`,
-      [search, searchPattern, searchPattern, searchPattern, fullTextQuery, fullTextQuery]
+      [search, searchPattern, searchPattern, searchPattern]
     );
 
     const rowData = rows as PlantListRow[];

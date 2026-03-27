@@ -53,20 +53,29 @@ async function cleanupExpiredAdminOperationalData() {
   const pool = getPool();
 
   await pool.execute(
-    `DELETE audit_logs
-     FROM admin_audit_logs AS audit_logs
-     LEFT JOIN user_profiles AS profiles ON profiles.user_id = audit_logs.actor_user_id
+    `DELETE FROM admin_audit_logs AS audit_logs
      WHERE audit_logs.created_at <
-       (UTC_TIMESTAMP() - INTERVAL
-         (CASE
-            WHEN profiles.audit_retention_days IN (30, 90, 365) THEN profiles.audit_retention_days
-            ELSE 90
-          END) DAY)`
+       (
+         CURRENT_TIMESTAMP - make_interval(
+           days => COALESCE(
+             (
+               SELECT CASE
+                 WHEN profiles.audit_retention_days IN (30, 90, 365) THEN profiles.audit_retention_days
+                 ELSE 90
+               END
+               FROM user_profiles AS profiles
+               WHERE profiles.user_id = audit_logs.actor_user_id
+               LIMIT 1
+             ),
+             90
+           )
+         )
+       )`
   );
 
   await pool.execute(
     `DELETE FROM api_request_telemetry
-     WHERE created_at < (UTC_TIMESTAMP() - INTERVAL ? DAY)`,
+     WHERE created_at < (CURRENT_TIMESTAMP - make_interval(days => ?))`,
     [DEFAULT_TELEMETRY_RETENTION_DAYS]
   );
 }

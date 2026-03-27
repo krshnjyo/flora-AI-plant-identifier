@@ -43,7 +43,7 @@ const DEFAULT_USERS_PAGE_SIZE = 25;
 const MAX_USERS_PAGE_SIZE = 100;
 
 function isProcedureMismatchError(error: unknown) {
-  return ["ER_SP_DOES_NOT_EXIST", "ER_SP_WRONG_NO_OF_ARGS", "ER_BAD_FIELD_ERROR"].includes(
+  return ["ER_SP_DOES_NOT_EXIST", "ER_SP_WRONG_NO_OF_ARGS", "ER_BAD_FIELD_ERROR", "42883"].includes(
     (error as { code?: string }).code || ""
   );
 }
@@ -58,7 +58,7 @@ async function callAdminUserFallback(sql: string, params: Array<number | string 
 
 async function updateUserRoleStatus(userId: number, role: "user" | "admin" | null, accountStatus: "active" | "inactive" | "suspended" | null) {
   try {
-    await callAdminUserProcedure("CALL sp_update_user_role_status(?, ?, ?)", [userId, role, accountStatus]);
+    await callAdminUserProcedure("SELECT sp_update_user_role_status(?, ?, ?)", [userId, role, accountStatus]);
   } catch (error) {
     if (!isProcedureMismatchError(error)) {
       throw error;
@@ -75,7 +75,7 @@ async function updateUserRoleStatus(userId: number, role: "user" | "admin" | nul
 
 async function deleteUserById(userId: number) {
   try {
-    await callAdminUserProcedure("CALL sp_delete_user(?)", [userId]);
+    await callAdminUserProcedure("SELECT sp_delete_user(?)", [userId]);
   } catch (error) {
     if (!isProcedureMismatchError(error)) {
       throw error;
@@ -114,7 +114,7 @@ export default withMethods(["GET", "PUT", "DELETE"], async function handler(req:
          ORDER BY created_at DESC
          ${limitClause}`
       ),
-      pool.execute("SELECT COUNT(*) AS total FROM users")
+      pool.execute("SELECT COUNT(*)::int AS total FROM users")
     ]);
 
     const items = rowResult[0] as UserListRow[];

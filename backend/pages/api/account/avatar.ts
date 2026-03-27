@@ -60,8 +60,8 @@ export default withMethods(["POST", "DELETE"], async function handler(req: NextA
     await getPool().execute(
       `INSERT INTO user_profiles (user_id, avatar_url)
        VALUES (?, NULL)
-       ON DUPLICATE KEY UPDATE
-         avatar_url = VALUES(avatar_url)`,
+       ON CONFLICT (user_id) DO UPDATE
+         SET avatar_url = EXCLUDED.avatar_url`,
       [user.userId]
     );
     await cleanupAvatarFile(previousAvatar);
@@ -92,8 +92,8 @@ export default withMethods(["POST", "DELETE"], async function handler(req: NextA
     await getPool().execute(
       `INSERT INTO user_profiles (user_id, avatar_url)
        VALUES (?, ?)
-       ON DUPLICATE KEY UPDATE
-         avatar_url = VALUES(avatar_url)`,
+       ON CONFLICT (user_id) DO UPDATE
+         SET avatar_url = EXCLUDED.avatar_url`,
       [user.userId, nextAvatarUrl]
     );
     await cleanupAvatarFile(previousAvatar);

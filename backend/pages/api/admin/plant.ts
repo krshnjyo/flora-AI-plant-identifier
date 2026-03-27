@@ -73,7 +73,7 @@ async function applyImageUrlToPlantJson(jsonFile: string, imageUrl: string) {
 }
 
 function isProcedureMismatchError(error: unknown) {
-  return ["ER_SP_DOES_NOT_EXIST", "ER_SP_WRONG_NO_OF_ARGS", "ER_BAD_FIELD_ERROR"].includes(
+  return ["ER_SP_DOES_NOT_EXIST", "ER_SP_WRONG_NO_OF_ARGS", "ER_BAD_FIELD_ERROR", "42883"].includes(
     (error as { code?: string }).code || ""
   );
 }
@@ -94,11 +94,11 @@ async function upsertPlantDirect(
     await getPool().execute(
       `INSERT INTO plants (common_name, scientific_name, species, confidence_score, json_file)
        VALUES (?, ?, ?, ?, ?)
-       ON DUPLICATE KEY UPDATE
-         common_name = VALUES(common_name),
-         species = VALUES(species),
-         confidence_score = VALUES(confidence_score),
-         json_file = VALUES(json_file)`,
+       ON CONFLICT (scientific_name) DO UPDATE SET
+         common_name = EXCLUDED.common_name,
+         species = EXCLUDED.species,
+         confidence_score = EXCLUDED.confidence_score,
+         json_file = EXCLUDED.json_file`,
       [commonName, scientificName, species, confidenceScore, jsonFile]
     );
     return;
@@ -129,7 +129,7 @@ async function upsertPlantWithFallback(
   jsonFile: string
 ) {
   try {
-    await callAdminPlantProcedure("CALL sp_upsert_plant(?, ?, ?, ?, ?, ?)", [
+    await callAdminPlantProcedure("SELECT sp_upsert_plant(?, ?, ?, ?, ?, ?)", [
       plantId,
       commonName,
       scientificName,
@@ -147,7 +147,7 @@ async function upsertPlantWithFallback(
 
 async function deletePlantWithFallback(plantId: number) {
   try {
-    await callAdminPlantProcedure("CALL sp_delete_plant(?)", [plantId]);
+    await callAdminPlantProcedure("SELECT sp_delete_plant(?)", [plantId]);
   } catch (error) {
     if (!isProcedureMismatchError(error)) {
       throw error;

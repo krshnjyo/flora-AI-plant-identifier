@@ -21,6 +21,10 @@ import { registerSchema } from "@/lib/validators";
 import { sendError, sendSuccess } from "@/lib/response";
 import { consumeRateLimitHybrid, getRateLimitKey, setRateLimitHeaders } from "@/lib/rate-limit";
 
+function isDuplicateEntryError(error: unknown) {
+  return ["ER_DUP_ENTRY", "23505"].includes((error as { code?: string }).code || "");
+}
+
 export default withMethods(["POST"], async function handler(req: NextApiRequest, res: NextApiResponse) {
   const rateKey = getRateLimitKey("auth-register", req.headers["x-forwarded-for"] || req.socket.remoteAddress);
   const rate = await consumeRateLimitHybrid(rateKey, 10, 60_000);
@@ -52,7 +56,7 @@ export default withMethods(["POST"], async function handler(req: NextApiRequest,
     await connection.commit();
   } catch (error) {
     await connection.rollback();
-    if ((error as { code?: string }).code === "ER_DUP_ENTRY") {
+    if (isDuplicateEntryError(error)) {
       return sendError(res, "EMAIL_EXISTS", "Email already registered", 409);
     }
     throw error;

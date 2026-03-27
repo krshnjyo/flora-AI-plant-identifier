@@ -12,7 +12,6 @@
  * - Uses consistent response envelope shapes so frontend handling is predictable
  */
 
-import type { Pool } from "mysql2/promise";
 import type { NextApiRequest, NextApiResponse } from "next";
 import { withMethods } from "@/lib/api-handler";
 import { cleanupExpiredIdentifyUploads, runImageUpload } from "@/lib/upload";
@@ -22,7 +21,7 @@ import {
   LOCAL_MODEL_MIN_CONFIDENCE,
   shouldRetryCatalogPrediction
 } from "@/lib/local-model";
-import { getPool } from "@/lib/db";
+import { getPool, type DatabasePool } from "@/lib/db";
 import { findDiseaseJsonByName } from "@/lib/disease-json";
 import { findPlantJsonByName } from "@/lib/plant-json";
 import { resolveDiseaseMatch } from "@/lib/disease-resolver";
@@ -150,7 +149,7 @@ export default withMethods(["POST"], async function handler(req: NextApiRequest,
     );
   }
 
-  let pool: Pool | null = null;
+  let pool: DatabasePool | null = null;
   try {
     pool = getPool();
   } catch {

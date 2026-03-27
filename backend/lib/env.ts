@@ -32,10 +32,7 @@ function readEnv(name: string, fallback = "") {
  */
 export const env = {
   // Database Configuration
-  dbHost: readEnv("DB_HOST"),
-  dbUser: readEnv("DB_USER"),
-  dbPassword: readEnv("DB_PASSWORD"),
-  dbName: readEnv("DB_NAME", "flora"),
+  databaseUrl: readEnv("DATABASE_URL"),
 
   // Authentication
   jwtSecret: readEnv("JWT_SECRET"),
@@ -78,6 +75,23 @@ export function hasSecureJwtSecret(secret = env.jwtSecret) {
 }
 
 /**
+ * PostgreSQL runtime expects a full connection string, not split host/user
+ * fields. Validate the scheme so deployment misconfigurations fail fast.
+ */
+export function hasValidDatabaseUrl(databaseUrl = env.databaseUrl) {
+  if (!databaseUrl) return false;
+
+  try {
+    const parsed = new URL(databaseUrl);
+    const protocol = parsed.protocol.toLowerCase();
+    const databaseName = parsed.pathname.replace(/^\/+/, "");
+    return (protocol === "postgresql:" || protocol === "postgres:") && Boolean(parsed.hostname) && Boolean(databaseName);
+  } catch {
+    return false;
+  }
+}
+
+/**
  * Parse comma-separated CORS origins once and reuse.
  * Useful for configuring middleware or headers.
  * 
@@ -98,14 +112,12 @@ export function getCorsAllowList() {
  * @throws {Error} If any required DB variable is missing.
  */
 export function assertDatabaseEnv() {
-  const missing = [
-    !env.dbHost ? "DB_HOST" : "",
-    !env.dbUser ? "DB_USER" : "",
-    !env.dbName ? "DB_NAME" : ""
-  ].filter(Boolean);
+  if (!env.databaseUrl) {
+    throw new Error("Missing required DB env var: DATABASE_URL");
+  }
 
-  if (missing.length > 0) {
-    throw new Error(`Missing required DB env vars: ${missing.join(", ")}`);
+  if (!hasValidDatabaseUrl(env.databaseUrl)) {
+    throw new Error("DATABASE_URL is invalid. Use a postgres:// or postgresql:// connection string.");
   }
 }
 

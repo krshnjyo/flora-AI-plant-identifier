@@ -7,7 +7,6 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { scoreTextSimilarity } from "../lib/resolver-scoring.ts";
 import { buildLowercaseCandidates, buildNameCandidates, sanitizeDiseaseLabel } from "../lib/name-normalization.ts";
-import { toSqlBooleanFullText } from "../lib/search.ts";
 
 test("scoreTextSimilarity ranks exact > contains > typo", () => {
   const weights = {
@@ -49,9 +48,4 @@ test("sanitizeDiseaseLabel strips non-disease placeholders", () => {
   assert.equal(sanitizeDiseaseLabel("NONE"), "");
   assert.equal(sanitizeDiseaseLabel("Healthy"), "");
   assert.equal(sanitizeDiseaseLabel("Powdery Mildew"), "Powdery Mildew");
-});
-
-test("toSqlBooleanFullText creates safe boolean query tokens", () => {
-  const query = toSqlBooleanFullText("late blight tomato");
-  assert.equal(query, "+late* +blight* +tomato*");
 });

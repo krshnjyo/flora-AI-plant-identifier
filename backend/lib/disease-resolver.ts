@@ -10,9 +10,9 @@
  * - Designed for reuse by multiple features to enforce single-source behavior
  */
 
-import type { Pool } from "mysql2/promise";
+import type { DatabasePool } from "@/lib/db";
 import { buildLowercaseCandidates, buildNameCandidates, normalizeIdentifiedName } from "@/lib/name-normalization";
-import { toSqlBooleanFullText } from "@/lib/search";
+import { toSqlContainsPattern } from "@/lib/search";
 import { scoreTextSimilarity } from "@/lib/resolver-scoring";
 
 export type ResolvedDiseaseMatch = {
@@ -196,11 +196,11 @@ function scoreDisease(
   return { score, matchedAlias };
 }
 
-async function runAdvancedDiseaseQuery(pool: Pool, searchCandidates: string[]) {
+async function runAdvancedDiseaseQuery(pool: DatabasePool, searchCandidates: string[]) {
   const whereClause = searchCandidates
     .map(
       () =>
-        "(pd.disease_name_norm = ? OR pd.disease_name_norm LIKE ? OR da.alias_name_norm = ? OR da.alias_name_norm LIKE ? OR (? <> '' AND MATCH(pd.disease_name, pd.affected_species, pd.disease_description, pd.symptoms, pd.causes) AGAINST (? IN BOOLEAN MODE)))"
+        "(pd.disease_name_norm = ? OR da.alias_name_norm = ? OR pd.disease_name ILIKE ? ESCAPE '\\' OR pd.affected_species ILIKE ? ESCAPE '\\' OR pd.disease_description ILIKE ? ESCAPE '\\' OR pd.symptoms ILIKE ? ESCAPE '\\' OR pd.causes ILIKE ? ESCAPE '\\' OR da.alias_name ILIKE ? ESCAPE '\\')"
     )
     .join(" OR ");
 
@@ -221,17 +221,28 @@ async function runAdvancedDiseaseQuery(pool: Pool, searchCandidates: string[]) {
 
   const params: string[] = [];
   for (const candidate of searchCandidates) {
-    const fullText = toSqlBooleanFullText(candidate);
-    params.push(candidate, `%${candidate}%`, candidate, `%${candidate}%`, fullText, fullText);
+    params.push(
+      candidate,
+      candidate,
+      toSqlContainsPattern(candidate),
+      toSqlContainsPattern(candidate),
+      toSqlContainsPattern(candidate),
+      toSqlContainsPattern(candidate),
+      toSqlContainsPattern(candidate),
+      toSqlContainsPattern(candidate)
+    );
   }
 
   const [rows] = await pool.execute(sql, params);
   return rows as DiseaseCandidateRow[];
 }
 
-async function runLegacyDiseaseQuery(pool: Pool, searchCandidates: string[]) {
+async function runLegacyDiseaseQuery(pool: DatabasePool, searchCandidates: string[]) {
   const whereClause = searchCandidates
-    .map(() => "(LOWER(disease_name) = ? OR LOWER(disease_name) LIKE ?)")
+    .map(
+      () =>
+        "(LOWER(disease_name) = ? OR disease_name ILIKE ? ESCAPE '\\' OR affected_species ILIKE ? ESCAPE '\\' OR disease_description ILIKE ? ESCAPE '\\' OR symptoms ILIKE ? ESCAPE '\\' OR causes ILIKE ? ESCAPE '\\')"
+    )
     .join(" OR ");
 
   const sql = `SELECT disease_id, disease_name, affected_species, disease_description, symptoms,
@@ -248,14 +259,21 @@ async function runLegacyDiseaseQuery(pool: Pool, searchCandidates: string[]) {
 
   const params: string[] = [];
   for (const candidate of searchCandidates) {
-    params.push(candidate, `%${candidate}%`);
+    params.push(
+      candidate,
+      toSqlContainsPattern(candidate),
+      toSqlContainsPattern(candidate),
+      toSqlContainsPattern(candidate),
+      toSqlContainsPattern(candidate),
+      toSqlContainsPattern(candidate)
+    );
   }
 
   const [rows] = await pool.execute(sql, params);
   return rows as DiseaseCandidateRow[];
 }
 
-export async function resolveDiseaseMatch(pool: Pool, diseaseLabel: string, options: ResolverOptions = {}) {
+export async function resolveDiseaseMatch(pool: DatabasePool, diseaseLabel: string, options: ResolverOptions = {}) {
   const searchCandidates = buildSearchCandidates(diseaseLabel);
   if (searchCandidates.length === 0) {
     return null;
@@ -266,8 +284,8 @@ export async function resolveDiseaseMatch(pool: Pool, diseaseLabel: string, opti
   try {
     rows = await runAdvancedDiseaseQuery(pool, searchCandidates);
   } catch (error) {
-    const mysqlCode = (error as { code?: string }).code || "";
-    if (["ER_NO_SUCH_TABLE", "ER_BAD_FIELD_ERROR", "ER_PARSE_ERROR"].includes(mysqlCode)) {
+    const queryCode = (error as { code?: string }).code || "";
+    if (["ER_NO_SUCH_TABLE", "ER_BAD_FIELD_ERROR", "ER_PARSE_ERROR", "42P01", "42703", "42601"].includes(queryCode)) {
       rows = await runLegacyDiseaseQuery(pool, searchCandidates);
     } else {
       throw error;
