@@ -22,6 +22,24 @@ export type LocalModelPrediction = {
   plantScores: Record<string, number>;
 };
 
+function summarizeLocalModelFailure(status: number, contentType: string | null, bodyText: string) {
+  const normalizedType = String(contentType || "").toLowerCase();
+  const trimmedBody = bodyText.trim();
+  const looksLikeHtml =
+    normalizedType.includes("text/html") || /<!doctype html|<html[\s>]/i.test(trimmedBody);
+
+  if (looksLikeHtml) {
+    return `Local model service returned ${status}. Check the deployed model service health endpoint and LOCAL_MODEL_ENDPOINT.`;
+  }
+
+  if (!trimmedBody) {
+    return `Local model service returned ${status}.`;
+  }
+
+  const condensed = trimmedBody.replace(/\s+/g, " ").slice(0, 240);
+  return `Local model error ${status}: ${condensed}`;
+}
+
 /**
  * Confidence floor below which the model result is treated as unreliable for
  * direct routing. This keeps weak predictions from being presented as factual
@@ -447,7 +465,7 @@ export async function identifyWithLocalModel(filePath: string, mimeType: string)
 
   if (!response.ok) {
     const text = await response.text();
-    throw new Error(`Local model error ${response.status}: ${text}`);
+    throw new Error(summarizeLocalModelFailure(response.status, response.headers.get("content-type"), text));
   }
 
   let payload: Record<string, unknown>;
