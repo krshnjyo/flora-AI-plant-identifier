@@ -3,7 +3,7 @@
 /* eslint-disable @next/next/no-img-element -- Result media uses direct catalog/backend URLs and keeps current rendering behavior intentionally unchanged. */
 
 import { useEffect, useMemo, useState } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { ArrowUpRight, ChevronLeft, ChevronRight } from "lucide-react";
 import { CenteredPageHero } from "@/components/layout/showcase-shell";
 import type { PlantResultJson } from "@/lib/types/api";
@@ -459,9 +459,13 @@ function buildPhotoSlides(sources: string[], title: string) {
   }));
 }
 
-export default function ResultPage({ params }: { params: { type: string; name: string } }) {
+export default function ResultPage() {
   const router = useRouter();
+  const params = useParams<{ type: string | string[]; name: string | string[] }>();
   const searchParams = useSearchParams();
+
+  const routeType = typeof params.type === "string" ? params.type : params.type?.[0] ?? "";
+  const routeName = typeof params.name === "string" ? params.name : params.name?.[0] ?? "";
 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -471,14 +475,14 @@ export default function ResultPage({ params }: { params: { type: string; name: s
   const [selectedPhotoIndex, setSelectedPhotoIndex] = useState(0);
   const [useFallbackImage, setUseFallbackImage] = useState(false);
 
-  const isDiseasePage = params.type === "disease";
+  const isDiseasePage = routeType === "disease";
   const diseaseFromQuery = searchParams.get("disease");
   const plantFromQuery = searchParams.get("plant");
   const relatedPlantName = plantFromQuery || disease?.primary_plant_name || disease?.related_plants?.[0] || "";
 
   useEffect(() => {
-    const type = params.type;
-    const name = decodeURIComponent(params.name);
+    const type = routeType;
+    const name = decodeURIComponent(routeName);
 
     const fetchData = async () => {
       setLoading(true);
@@ -518,7 +522,7 @@ export default function ResultPage({ params }: { params: { type: string; name: s
     };
 
     void fetchData();
-  }, [diseaseFromQuery, params.name, params.type]);
+  }, [diseaseFromQuery, routeName, routeType]);
 
   const averageRisk = useMemo(() => {
     if (!plant || !plant.disease_risk_levels.values.length) return 0;
@@ -549,7 +553,7 @@ export default function ResultPage({ params }: { params: { type: string; name: s
 
   const selectedPanel = infoPanels.find((panel) => panel.key === selectedPanelKey) || null;
 
-  const title = plant?.common_name || disease?.disease_name || decodeURIComponent(params.name);
+  const title = plant?.common_name || disease?.disease_name || decodeURIComponent(routeName);
   const supportLine = plant ? plant.scientific_name : `Affected Species · ${safeText(disease?.affected_species)}`;
   const supportBadge = plant ? String(Math.max(0, Math.min(100, Math.round(plant.confidence_score)))) : "";
   const fallbackImage = isDiseasePage ? "/home/plant-2.jpg" : "/home/plant-1.jpg";
