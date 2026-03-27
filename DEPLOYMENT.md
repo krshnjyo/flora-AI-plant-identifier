@@ -11,13 +11,15 @@ This repo deploys cleanly as:
 
 Set the Vercel project root to `frontend`.
 
-Required environment variable:
+Required environment variables:
 
 ```env
-NEXT_PUBLIC_API_BASE_URL=https://YOUR-BACKEND.onrender.com
+NEXT_PUBLIC_API_BASE_URL=https://flora-frontend-app.vercel.app
+BACKEND_ORIGIN=https://flora-backend-o6rc.onrender.com
 ```
 
-Use the exact public backend URL. The frontend calls the backend from the browser and sends cookies with `credentials: "include"`.
+This uses Vercel rewrites so browser requests stay same-origin on the frontend host and are then proxied to Render.
+That avoids third-party-cookie problems for login and account loading.
 
 ## 2. Backend on Render
 

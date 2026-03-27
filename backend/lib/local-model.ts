@@ -22,6 +22,12 @@ export type LocalModelPrediction = {
   plantScores: Record<string, number>;
 };
 
+const TRANSIENT_MODEL_STATUSES = new Set([429, 502, 503, 504]);
+
+function sleep(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 function summarizeLocalModelFailure(status: number, contentType: string | null, bodyText: string) {
   const normalizedType = String(contentType || "").toLowerCase();
   const trimmedBody = bodyText.trim();
@@ -38,6 +44,36 @@ function summarizeLocalModelFailure(status: number, contentType: string | null, 
 
   const condensed = trimmedBody.replace(/\s+/g, " ").slice(0, 240);
   return `Local model error ${status}: ${condensed}`;
+}
+
+async function requestLocalModel(fileBuffer: Buffer, mimeType: string, attempt: number) {
+  const formData = new FormData();
+  const blobBytes = new Uint8Array(fileBuffer);
+  formData.append("image", new Blob([blobBytes], { type: mimeType || "image/jpeg" }), "scan.jpg");
+
+  const response = await fetch(env.localModelEndpoint, {
+    method: "POST",
+    body: formData
+  });
+
+  if (!response.ok) {
+    const text = await response.text();
+    const error = new Error(
+      summarizeLocalModelFailure(response.status, response.headers.get("content-type"), text)
+    ) as Error & { status?: number; attempt?: number };
+    error.status = response.status;
+    error.attempt = attempt;
+    throw error;
+  }
+
+  let payload: Record<string, unknown>;
+  try {
+    payload = (await response.json()) as Record<string, unknown>;
+  } catch {
+    throw new Error("Local model returned a non-JSON response");
+  }
+
+  return decodeLocalModelPayload(payload);
 }
 
 /**
@@ -455,25 +491,20 @@ export function shouldRetryCatalogPrediction(
 
 export async function identifyWithLocalModel(filePath: string, mimeType: string) {
   const fileBuffer = await fs.readFile(filePath);
-  const formData = new FormData();
-  formData.append("image", new Blob([fileBuffer], { type: mimeType || "image/jpeg" }), "scan.jpg");
+  let lastError: unknown = null;
 
-  const response = await fetch(env.localModelEndpoint, {
-    method: "POST",
-    body: formData
-  });
-
-  if (!response.ok) {
-    const text = await response.text();
-    throw new Error(summarizeLocalModelFailure(response.status, response.headers.get("content-type"), text));
+  for (let attempt = 1; attempt <= 2; attempt += 1) {
+    try {
+      return await requestLocalModel(fileBuffer, mimeType, attempt);
+    } catch (error) {
+      lastError = error;
+      const status = (error as { status?: number }).status;
+      if (!TRANSIENT_MODEL_STATUSES.has(Number(status)) || attempt === 2) {
+        break;
+      }
+      await sleep(1500);
+    }
   }
 
-  let payload: Record<string, unknown>;
-  try {
-    payload = (await response.json()) as Record<string, unknown>;
-  } catch {
-    throw new Error("Local model returned a non-JSON response");
-  }
-
-  return decodeLocalModelPayload(payload);
+  throw (lastError instanceof Error ? lastError : new Error("Local model inference failed"));
 }

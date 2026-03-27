@@ -73,6 +73,10 @@ function isLoopbackBase(base: string) {
 }
 
 function resolveConfiguredApiBase() {
+  if (!API_BASE_ENV && typeof window !== "undefined" && !canUseLocalFallbacks()) {
+    return window.location.origin.replace(/\/$/, "");
+  }
+
   if (!API_BASE_ENV) {
     return "";
   }

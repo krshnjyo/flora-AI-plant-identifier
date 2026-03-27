@@ -11,6 +11,10 @@
  */
 
 /** @type {import('next').NextConfig} */
+function normalizeOrigin(value) {
+  return String(value || "").trim().replace(/\/+$/, "");
+}
+
 function buildRemotePatterns() {
   const defaults = [
     {
@@ -54,11 +58,52 @@ function buildRemotePatterns() {
   }
 }
 
+function buildProxyRewrites() {
+  const backendOrigin = normalizeOrigin(process.env.BACKEND_ORIGIN || "https://flora-backend-o6rc.onrender.com");
+  if (!backendOrigin) {
+    return [];
+  }
+
+  return [
+    {
+      source: "/api/:path*",
+      destination: `${backendOrigin}/api/:path*`
+    },
+    {
+      source: "/uploads/:path*",
+      destination: `${backendOrigin}/uploads/:path*`
+    },
+    {
+      source: "/profiles/:path*",
+      destination: `${backendOrigin}/profiles/:path*`
+    },
+    {
+      source: "/plants/:path*",
+      destination: `${backendOrigin}/plants/:path*`
+    },
+    {
+      source: "/diseases/:path*",
+      destination: `${backendOrigin}/diseases/:path*`
+    },
+    {
+      source: "/gallery-result/:path*",
+      destination: `${backendOrigin}/gallery-result/:path*`
+    }
+  ];
+}
+
 const nextConfig = {
   poweredByHeader: false,
   images: {
     formats: ["image/avif", "image/webp"],
     remotePatterns: buildRemotePatterns()
+  },
+  async rewrites() {
+    return {
+      // Keep local Next routes like `/api/strip-images` working, then proxy the
+      // rest to the backend so browser auth stays same-origin on Vercel.
+      fallback: buildProxyRewrites()
+    };
   },
   async headers() {
     return [
