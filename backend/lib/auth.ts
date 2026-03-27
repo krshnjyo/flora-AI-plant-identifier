@@ -14,7 +14,7 @@ import type { NextApiRequest } from "next";
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
 import { parse as parseCookie, serialize as serializeCookie } from "cookie";
-import { env } from "@/lib/env";
+import { assertAuthEnv, env, getAuthCookieSameSite } from "@/lib/env";
 
 const TOKEN_COOKIE = "flora_token";
 const TOKEN_AGE_SEC = 60 * 60 * 24 * 7;
@@ -34,9 +34,7 @@ export async function verifyPassword(password: string, hash: string) {
 }
 
 export function signToken(payload: JwtPayload) {
-  if (!env.jwtSecret) {
-    throw new Error("JWT_SECRET is missing");
-  }
+  assertAuthEnv();
 
   return jwt.sign(payload, env.jwtSecret, {
     expiresIn: TOKEN_AGE_SEC,
@@ -47,9 +45,7 @@ export function signToken(payload: JwtPayload) {
 }
 
 export function verifyToken(token: string): JwtPayload {
-  if (!env.jwtSecret) {
-    throw new Error("JWT_SECRET is missing");
-  }
+  assertAuthEnv();
 
   return jwt.verify(token, env.jwtSecret, {
     algorithms: ["HS256"],
@@ -82,21 +78,25 @@ export function getUserFromRequest(req: NextApiRequest): JwtPayload | null {
 }
 
 export function buildAuthCookie(token: string) {
+  const sameSite = getAuthCookieSameSite();
   return serializeCookie(TOKEN_COOKIE, token, {
     httpOnly: true,
-    secure: process.env.NODE_ENV === "production",
-    sameSite: "strict",
+    secure: process.env.NODE_ENV === "production" || sameSite === "none",
+    sameSite,
     path: "/",
+    ...(env.authCookieDomain ? { domain: env.authCookieDomain } : {}),
     maxAge: TOKEN_AGE_SEC
   });
 }
 
 export function clearAuthCookie() {
+  const sameSite = getAuthCookieSameSite();
   return serializeCookie(TOKEN_COOKIE, "", {
     httpOnly: true,
-    secure: process.env.NODE_ENV === "production",
-    sameSite: "strict",
+    secure: process.env.NODE_ENV === "production" || sameSite === "none",
+    sameSite,
     path: "/",
+    ...(env.authCookieDomain ? { domain: env.authCookieDomain } : {}),
     maxAge: 0
   });
 }

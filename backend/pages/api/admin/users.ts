@@ -18,13 +18,29 @@ import { withMethods } from "@/lib/api-handler";
 import { requireAdmin } from "@/lib/auth-guards";
 import { invalidateAuthGuardCache } from "@/lib/auth-guards";
 import { getPool } from "@/lib/db";
-import { userUpdateSchema } from "@/lib/validators";
+import { paginationQuerySchema, userUpdateSchema } from "@/lib/validators";
 import { sendError, sendSuccess } from "@/lib/response";
 import { recordAdminAudit } from "@/lib/admin-audit";
 
 const userDeleteSchema = z.object({
   userId: z.number().int().positive()
 });
+
+type UserListRow = {
+  user_id: number;
+  full_name: string;
+  email: string;
+  role: "user" | "admin";
+  account_status: "active" | "inactive" | "suspended";
+  created_at: string;
+};
+
+type TotalRow = {
+  total: number;
+};
+
+const DEFAULT_USERS_PAGE_SIZE = 25;
+const MAX_USERS_PAGE_SIZE = 100;
 
 function isProcedureMismatchError(error: unknown) {
   return ["ER_SP_DOES_NOT_EXIST", "ER_SP_WRONG_NO_OF_ARGS", "ER_BAD_FIELD_ERROR"].includes(
@@ -77,14 +93,42 @@ export default withMethods(["GET", "PUT", "DELETE"], async function handler(req:
   const audit = (input: Parameters<typeof recordAdminAudit>[1]) => recordAdminAudit(req, input);
 
   if (req.method === "GET") {
-    const [rows] = await getPool().execute(
-      `SELECT user_id, full_name, email, role, account_status, created_at
-       FROM users
-       ORDER BY created_at DESC
-       LIMIT 200`
-    );
+    const parsedQuery = paginationQuerySchema.safeParse(req.query);
+    if (!parsedQuery.success) {
+      return sendError(res, "VALIDATION_ERROR", "Invalid users pagination query", 422, parsedQuery.error.flatten());
+    }
 
-    return sendSuccess(res, rows);
+    const page = parsedQuery.data.page;
+    const limit = Math.min(parsedQuery.data.limit || DEFAULT_USERS_PAGE_SIZE, MAX_USERS_PAGE_SIZE);
+    const offset = (page - 1) * limit;
+    // LIMIT/OFFSET placeholders fail on the current MySQL runtime. Page/limit
+    // are validated integers, so embed them directly and keep the rest of the
+    // query unchanged.
+    const limitClause = `LIMIT ${limit} OFFSET ${offset}`;
+    const pool = getPool();
+
+    const [rowResult, totalResult] = await Promise.all([
+      pool.execute(
+        `SELECT user_id, full_name, email, role, account_status, created_at
+         FROM users
+         ORDER BY created_at DESC
+         ${limitClause}`
+      ),
+      pool.execute("SELECT COUNT(*) AS total FROM users")
+    ]);
+
+    const items = rowResult[0] as UserListRow[];
+    const total = ((totalResult[0] as TotalRow[])[0]?.total || 0) as number;
+    const totalPages = total > 0 ? Math.ceil(total / limit) : 1;
+
+    return sendSuccess(res, {
+      items,
+      page,
+      limit,
+      total,
+      totalPages,
+      hasMore: page < totalPages
+    });
   }
 
   if (req.method === "DELETE") {

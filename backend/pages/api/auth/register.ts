@@ -16,6 +16,7 @@ import type { NextApiRequest, NextApiResponse } from "next";
 import { withMethods } from "@/lib/api-handler";
 import { getPool } from "@/lib/db";
 import { hashPassword, signToken, buildAuthCookie } from "@/lib/auth";
+import { createDefaultUserProfile } from "@/lib/user-profile";
 import { registerSchema } from "@/lib/validators";
 import { sendError, sendSuccess } from "@/lib/response";
 import { consumeRateLimitHybrid, getRateLimitKey, setRateLimitHeaders } from "@/lib/rate-limit";
@@ -38,18 +39,25 @@ export default withMethods(["POST"], async function handler(req: NextApiRequest,
 
   const passwordHash = await hashPassword(password);
 
+  const connection = await pool.getConnection();
   let result: { insertId: number };
   try {
-    const [insertResult] = await pool.execute(
+    await connection.beginTransaction();
+    const [insertResult] = await connection.execute(
       "INSERT INTO users (full_name, email, password_hash, role, account_status) VALUES (?, ?, ?, 'user', 'active')",
       [fullName, email, passwordHash]
     );
     result = insertResult as { insertId: number };
+    await createDefaultUserProfile(connection, result.insertId);
+    await connection.commit();
   } catch (error) {
+    await connection.rollback();
     if ((error as { code?: string }).code === "ER_DUP_ENTRY") {
       return sendError(res, "EMAIL_EXISTS", "Email already registered", 409);
     }
     throw error;
+  } finally {
+    connection.release();
   }
 
   const token = signToken({ userId: result.insertId, email, role: "user" });

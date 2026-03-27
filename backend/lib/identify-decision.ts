@@ -27,6 +27,7 @@ export type IdentifyDecisionInput = {
   diseaseGuess: string;
   plantMatch: PlantMatchLite;
   diseaseMatch: DiseaseMatchLite;
+  allowModelFallback?: boolean;
 };
 
 export type IdentifyDecisionResult = {
@@ -37,15 +38,19 @@ export type IdentifyDecisionResult = {
 };
 
 export function resolveIdentifyDecision(input: IdentifyDecisionInput): IdentifyDecisionResult {
+  const allowModelFallback = input.allowModelFallback ?? true;
   const plantLabelFromModel = input.identifiedName.trim() || null;
-  const hasPlantSignal = Boolean(input.plantMatch || plantLabelFromModel);
+  const directPlantSignal =
+    (input.plantMatch ? input.plantMatch.common_name || input.plantMatch.scientific_name : null) ||
+    plantLabelFromModel ||
+    null;
+  const hasPlantSignal = Boolean(directPlantSignal || input.diseaseMatch?.primary_plant_name || input.diseaseMatch?.linked_plant_names?.[0]);
 
   // Prioritize model-derived plant label before disease metadata fallbacks.
   // This avoids cross-species drift for shared diseases (e.g., blight variants)
   // when the disease resolver picks a different primary plant.
   const canonicalPlantName =
-    (input.plantMatch ? input.plantMatch.common_name || input.plantMatch.scientific_name : null) ||
-    plantLabelFromModel ||
+    directPlantSignal ||
     input.diseaseMatch?.primary_plant_name ||
     input.diseaseMatch?.linked_plant_names?.[0] ||
     null;
@@ -59,9 +64,15 @@ export function resolveIdentifyDecision(input: IdentifyDecisionInput): IdentifyD
   if (input.outputMode === "disease" && resolvedDiseaseName) {
     entityType = "disease";
     canonicalName = resolvedDiseaseName;
-  } else if (input.outputMode === "plant" && canonicalPlantName) {
+  } else if (input.outputMode === "disease" && !allowModelFallback) {
+    entityType = "not_found";
+    canonicalName = resolvedDiseaseName || canonicalName;
+  } else if (input.outputMode === "plant" && directPlantSignal) {
     entityType = "plant";
-    canonicalName = canonicalPlantName;
+    canonicalName = directPlantSignal;
+  } else if (input.outputMode === "plant" && !allowModelFallback) {
+    entityType = "not_found";
+    canonicalName = canonicalPlantName || canonicalName;
   } else if (hasPlantSignal) {
     entityType = "plant";
     canonicalName = canonicalPlantName || canonicalName;

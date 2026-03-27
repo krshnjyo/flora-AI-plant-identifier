@@ -28,6 +28,49 @@ function getRequestIp(req: NextApiRequest) {
   return raw.split(",")[0]?.trim().slice(0, 80) || null;
 }
 
+let lastAuditCleanupAt = 0;
+const AUDIT_CLEANUP_INTERVAL_MS = 15 * 60 * 1000;
+const DEFAULT_TELEMETRY_RETENTION_DAYS = 90;
+
+/**
+ * Prune old audit/telemetry rows on a throttled cadence.
+ *
+ * Notes:
+ * - Audit rows can honor per-actor retention because they are tied to
+ *   `actor_user_id`.
+ * - Request telemetry is not user-owned, so we retain a conservative global
+ *   default window rather than pretending the per-user retention setting can
+ *   be applied there.
+ * - Cleanup is best-effort and must never block admin mutations.
+ */
+async function cleanupExpiredAdminOperationalData() {
+  const now = Date.now();
+  if (now - lastAuditCleanupAt < AUDIT_CLEANUP_INTERVAL_MS) {
+    return;
+  }
+
+  lastAuditCleanupAt = now;
+  const pool = getPool();
+
+  await pool.execute(
+    `DELETE audit_logs
+     FROM admin_audit_logs AS audit_logs
+     LEFT JOIN user_profiles AS profiles ON profiles.user_id = audit_logs.actor_user_id
+     WHERE audit_logs.created_at <
+       (UTC_TIMESTAMP() - INTERVAL
+         (CASE
+            WHEN profiles.audit_retention_days IN (30, 90, 365) THEN profiles.audit_retention_days
+            ELSE 90
+          END) DAY)`
+  );
+
+  await pool.execute(
+    `DELETE FROM api_request_telemetry
+     WHERE created_at < (UTC_TIMESTAMP() - INTERVAL ? DAY)`,
+    [DEFAULT_TELEMETRY_RETENTION_DAYS]
+  );
+}
+
 export async function recordAdminAudit(req: NextApiRequest, input: AdminAuditInput) {
   try {
     const actor = getUserFromRequest(req);
@@ -49,6 +92,8 @@ export async function recordAdminAudit(req: NextApiRequest, input: AdminAuditInp
         input.metadata ? JSON.stringify(input.metadata) : null
       ]
     );
+
+    await cleanupExpiredAdminOperationalData();
   } catch {
     // Audit logs must never block the request path.
   }

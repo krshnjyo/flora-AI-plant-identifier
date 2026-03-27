@@ -53,3 +53,26 @@ export const userUpdateSchema = z.object({
   role: z.enum(["user", "admin"]).optional(),
   accountStatus: z.enum(["active", "inactive", "suspended"]).optional()
 });
+
+function parseQueryInteger(value: unknown) {
+  const raw = Array.isArray(value) ? value[0] : value;
+  if (raw === undefined || raw === null || raw === "") {
+    return undefined;
+  }
+
+  const parsed = Number.parseInt(String(raw), 10);
+  return Number.isFinite(parsed) ? parsed : Number.NaN;
+}
+
+/**
+ * Shared pagination contract for list endpoints.
+ *
+ * Notes:
+ * - Keeps page-based pagination consistent across history/admin surfaces.
+ * - Hard caps are enforced per endpoint after parsing so callers cannot force
+ *   unbounded reads.
+ */
+export const paginationQuerySchema = z.object({
+  page: z.preprocess(parseQueryInteger, z.number().int().positive().default(1)),
+  limit: z.preprocess(parseQueryInteger, z.number().int().positive().default(50))
+});

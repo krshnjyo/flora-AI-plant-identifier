@@ -95,3 +95,40 @@ test("smart mode keeps model plant label over disease-linked fallback plant", ()
   assert.equal(result.canonicalName, "Potato");
   assert.equal(result.resolvedDiseaseName, "Late blight");
 });
+
+test("plant mode does not fall back to disease-only output when fallback is disabled", () => {
+  const result = resolveIdentifyDecision({
+    outputMode: "plant",
+    identifiedName: "",
+    diseaseGuess: "Powdery mildew",
+    plantMatch: null,
+    diseaseMatch: {
+      disease_name: "Powdery mildew",
+      primary_plant_name: "Rose",
+      linked_plant_names: ["Rose"]
+    },
+    allowModelFallback: false
+  });
+
+  assert.equal(result.entityType, "not_found");
+  assert.equal(result.canonicalPlantName, "Rose");
+  assert.equal(result.resolvedDiseaseName, "Powdery mildew");
+});
+
+test("disease mode does not fall back to plant-only output when fallback is disabled", () => {
+  const result = resolveIdentifyDecision({
+    outputMode: "disease",
+    identifiedName: "Tomato",
+    diseaseGuess: "",
+    plantMatch: {
+      common_name: "Tomato",
+      scientific_name: "Solanum lycopersicum"
+    },
+    diseaseMatch: null,
+    allowModelFallback: false
+  });
+
+  assert.equal(result.entityType, "not_found");
+  assert.equal(result.canonicalPlantName, "Tomato");
+  assert.equal(result.resolvedDiseaseName, null);
+});

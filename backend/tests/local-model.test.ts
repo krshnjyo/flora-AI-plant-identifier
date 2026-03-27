@@ -5,7 +5,12 @@
 
 import test from "node:test";
 import assert from "node:assert/strict";
-import { decodeLocalModelPayload } from "../lib/local-model.ts";
+import {
+  decodeLocalModelPayload,
+  isLowConfidencePrediction,
+  LOCAL_MODEL_MIN_CONFIDENCE,
+  shouldRetryCatalogPrediction
+} from "../lib/local-model.ts";
 
 test("decodes disease from class label when payload is class-only", () => {
   const result = decodeLocalModelPayload({
@@ -93,4 +98,45 @@ test("decodes extended tomato disease labels from the new plant_ai model", () =>
   assert.equal(result.plantName, "Tomato");
   assert.equal(result.diseaseName, "Leaf Mold");
   assert.equal(result.isHealthy, false);
+});
+
+test("flags predictions below the reliability threshold", () => {
+  assert.equal(isLowConfidencePrediction({ confidence: LOCAL_MODEL_MIN_CONFIDENCE - 0.01 }), true);
+  assert.equal(isLowConfidencePrediction({ confidence: LOCAL_MODEL_MIN_CONFIDENCE }), false);
+});
+
+test("retries ambiguous closed-set predictions before routing into the catalog", () => {
+  assert.equal(
+    shouldRetryCatalogPrediction({
+      confidence: 0.92,
+      topClasses: [
+        { className: "Tomato_Late_blight", confidence: 0.44 },
+        { className: "Tomato_Early_blight", confidence: 0.37 }
+      ],
+      plantScores: {
+        Tomato: 0.57,
+        Potato: 0.43,
+        Pepper: 0
+      }
+    }),
+    true
+  );
+});
+
+test("accepts confident catalog predictions with clear class and plant separation", () => {
+  assert.equal(
+    shouldRetryCatalogPrediction({
+      confidence: 0.96,
+      topClasses: [
+        { className: "Potato___Late_blight", confidence: 0.96 },
+        { className: "Tomato_Late_blight", confidence: 0.02 }
+      ],
+      plantScores: {
+        Potato: 0.95,
+        Tomato: 0.03,
+        Pepper: 0.02
+      }
+    }),
+    false
+  );
 });

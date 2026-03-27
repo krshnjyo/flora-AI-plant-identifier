@@ -11,7 +11,6 @@ import { requireUser } from "@/lib/auth-guards";
 import { getPool } from "@/lib/db";
 import { runImageUpload } from "@/lib/upload";
 import { sendError, sendSuccess } from "@/lib/response";
-import { ensureUserProfileTable } from "@/lib/user-profile";
 import { backendPath } from "@/lib/backend-root";
 
 export const config = {
@@ -55,8 +54,6 @@ async function cleanupAvatarFile(avatarUrl: string) {
 export default withMethods(["POST", "DELETE"], async function handler(req: NextApiRequest, res: NextApiResponse) {
   const user = await requireUser(req, res);
   if (!user) return;
-
-  await ensureUserProfileTable();
 
   if (req.method === "DELETE") {
     const previousAvatar = await getCurrentAvatarUrl(user.userId);

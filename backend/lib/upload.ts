@@ -24,6 +24,10 @@ if (!fs.existsSync(uploadDir)) {
 const imageTypes = new Set(["image/jpeg", "image/png", "image/webp", "image/jpg"]);
 const jsonTypes = new Set(["application/json", "text/json"]);
 const imageExtensions = new Set([".jpg", ".jpeg", ".png", ".webp"]);
+let lastIdentifyUploadCleanupAt = 0;
+
+const IDENTIFY_UPLOAD_RETENTION_MS = 30 * 24 * 60 * 60 * 1000;
+const IDENTIFY_UPLOAD_CLEANUP_INTERVAL_MS = 15 * 60 * 1000;
 
 function hasAllowedImageExtension(name: string) {
   const lower = name.toLowerCase();
@@ -121,4 +125,62 @@ export function runDiseaseAssetUpload(req: NextApiRequest, res: NextApiResponse)
       resolve();
     });
   });
+}
+
+/**
+ * Opportunistically delete stale identify-upload images.
+ *
+ * Notes:
+ * - Only files left in `public/uploads` are cleaned; admin plant/disease
+ *   assets are moved out of this directory during their own upload flow.
+ * - The function is throttled so identify requests do not repeatedly pay the
+ *   cost of scanning the directory.
+ */
+export async function cleanupExpiredIdentifyUploads({
+  olderThanMs = IDENTIFY_UPLOAD_RETENTION_MS,
+  minIntervalMs = IDENTIFY_UPLOAD_CLEANUP_INTERVAL_MS,
+  maxDeletes = 40
+}: {
+  olderThanMs?: number;
+  minIntervalMs?: number;
+  maxDeletes?: number;
+} = {}) {
+  const now = Date.now();
+  if (now - lastIdentifyUploadCleanupAt < minIntervalMs) {
+    return 0;
+  }
+
+  lastIdentifyUploadCleanupAt = now;
+  const entries = await fs.promises.readdir(uploadDir, { withFileTypes: true });
+  const staleFiles: Array<{ filePath: string; mtimeMs: number }> = [];
+
+  for (const entry of entries) {
+    if (!entry.isFile()) {
+      continue;
+    }
+
+    const filePath = `${uploadDir}/${entry.name}`;
+    try {
+      const stats = await fs.promises.stat(filePath);
+      if (now - stats.mtimeMs >= olderThanMs) {
+        staleFiles.push({ filePath, mtimeMs: stats.mtimeMs });
+      }
+    } catch {
+      // Another request/process may have moved or deleted the file already.
+    }
+  }
+
+  staleFiles.sort((a, b) => a.mtimeMs - b.mtimeMs);
+
+  let deletedCount = 0;
+  for (const staleFile of staleFiles.slice(0, maxDeletes)) {
+    try {
+      await fs.promises.unlink(staleFile.filePath);
+      deletedCount += 1;
+    } catch {
+      // Best-effort cleanup only.
+    }
+  }
+
+  return deletedCount;
 }

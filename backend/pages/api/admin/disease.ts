@@ -46,6 +46,18 @@ type UploadedAsset = {
   filename: string;
 };
 
+async function cleanupUploadedAssets(paths: string[]) {
+  await Promise.all(
+    paths.map(async (filePath) => {
+      try {
+        await fs.unlink(filePath);
+      } catch {
+        // Best-effort cleanup only.
+      }
+    })
+  );
+}
+
 function toFileSafeToken(value: string) {
   return value
     .toLowerCase()
@@ -281,6 +293,7 @@ export default withMethods(["POST", "PUT", "DELETE"], async function handler(req
   if (req.method === "POST") {
     let source: Record<string, unknown> = {};
     let jsonFile = "";
+    const cleanupPaths: string[] = [];
 
     if (isMultipart) {
       try {
@@ -301,6 +314,7 @@ export default withMethods(["POST", "PUT", "DELETE"], async function handler(req
         await fs.mkdir(destDir, { recursive: true });
         const destPath = path.join(destDir, jsonFileName);
         await fs.rename(jsonUpload.path, destPath);
+        cleanupPaths.push(destPath);
         jsonFile = path.join("data", "diseases", jsonFileName).replace(/\\/g, "/");
       }
     } else {
@@ -331,9 +345,9 @@ export default withMethods(["POST", "PUT", "DELETE"], async function handler(req
       primaryPlantId: Number(source.primaryPlantId || 0) || null
     };
 
-      if (jsonFile) {
-        try {
-          const diseaseJson = await readDiseaseJson(jsonFile);
+    if (jsonFile) {
+      try {
+        const diseaseJson = await readDiseaseJson(jsonFile);
         payload = {
           diseaseName: payload.diseaseName || diseaseJson.disease_name,
           affectedSpecies: payload.affectedSpecies || diseaseJson.affected_species,
@@ -345,57 +359,64 @@ export default withMethods(["POST", "PUT", "DELETE"], async function handler(req
           severityLevel: payload.severityLevel || diseaseJson.severity_level,
           jsonFile,
           primaryPlantId: payload.primaryPlantId
-          };
-        } catch {
-          await audit({
-            action: "disease.create",
-            targetType: "disease",
-            targetId: payload.diseaseName || null,
-            status: "failure",
-            metadata: { reason: "invalid_json_schema" }
-          });
-          return sendError(res, "INVALID_DISEASE_JSON", "Uploaded JSON does not match required disease structure", 422);
-        }
-      }
-
-      const parsed = diseaseAdminSchema.safeParse(payload);
-      if (!parsed.success) {
+        };
+      } catch {
         await audit({
           action: "disease.create",
           targetType: "disease",
+          targetId: payload.diseaseName || null,
           status: "failure",
-          metadata: { reason: "validation_error" }
+          metadata: { reason: "invalid_json_schema" }
         });
-        return sendError(res, "VALIDATION_ERROR", "Invalid disease payload", 422, parsed.error.flatten());
+        await cleanupUploadedAssets(cleanupPaths);
+        return sendError(res, "INVALID_DISEASE_JSON", "Uploaded JSON does not match required disease structure", 422);
       }
+    }
 
-    const primaryPlantId = await resolvePrimaryPlantId(parsed.data.affectedSpecies, parsed.data.primaryPlantId ?? null);
-
-    await upsertDiseaseWithFallback(
-      null,
-      parsed.data.diseaseName,
-      parsed.data.affectedSpecies,
-      parsed.data.diseaseDescription,
-      parsed.data.symptoms,
-      parsed.data.causes,
-      parsed.data.preventionMethods,
-      parsed.data.treatmentMethods,
-      parsed.data.severityLevel,
-      parsed.data.jsonFile || jsonFile || null,
-      primaryPlantId
-    );
-
-      invalidateDiseaseJsonCache();
-      await bumpCacheVersion("diseases");
+    const parsed = diseaseAdminSchema.safeParse(payload);
+    if (!parsed.success) {
       await audit({
         action: "disease.create",
         targetType: "disease",
-        targetId: parsed.data.diseaseName,
-        status: "success",
-        metadata: { jsonFile: parsed.data.jsonFile || jsonFile || null, primaryPlantId }
+        status: "failure",
+        metadata: { reason: "validation_error" }
       });
-      return sendSuccess(res, { message: "Disease created", jsonFile: jsonFile || null }, 201);
+      await cleanupUploadedAssets(cleanupPaths);
+      return sendError(res, "VALIDATION_ERROR", "Invalid disease payload", 422, parsed.error.flatten());
     }
+
+    const primaryPlantId = await resolvePrimaryPlantId(parsed.data.affectedSpecies, parsed.data.primaryPlantId ?? null);
+
+    try {
+      await upsertDiseaseWithFallback(
+        null,
+        parsed.data.diseaseName,
+        parsed.data.affectedSpecies,
+        parsed.data.diseaseDescription,
+        parsed.data.symptoms,
+        parsed.data.causes,
+        parsed.data.preventionMethods,
+        parsed.data.treatmentMethods,
+        parsed.data.severityLevel,
+        parsed.data.jsonFile || jsonFile || null,
+        primaryPlantId
+      );
+    } catch (error) {
+      await cleanupUploadedAssets(cleanupPaths);
+      throw error;
+    }
+
+    invalidateDiseaseJsonCache();
+    await bumpCacheVersion("diseases");
+    await audit({
+      action: "disease.create",
+      targetType: "disease",
+      targetId: parsed.data.diseaseName,
+      status: "success",
+      metadata: { jsonFile: parsed.data.jsonFile || jsonFile || null, primaryPlantId }
+    });
+    return sendSuccess(res, { message: "Disease created", jsonFile: jsonFile || null }, 201);
+  }
 
   let body: unknown;
   try {

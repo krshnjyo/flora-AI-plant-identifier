@@ -44,6 +44,19 @@ type UploadedAsset = {
   filename: string;
 };
 
+async function cleanupUploadedAssets(paths: string[]) {
+  await Promise.all(
+    paths.map(async (filePath) => {
+      try {
+        await fs.unlink(filePath);
+      } catch {
+        // Best-effort cleanup only. Validation failures should never mask
+        // the original API response because a temp file could not be removed.
+      }
+    })
+  );
+}
+
 function toFileSafeToken(value: string) {
   return value
     .toLowerCase()
@@ -150,25 +163,49 @@ export default withMethods(["POST", "PUT", "DELETE"], async function handler(req
   }
 
   const audit = (input: Parameters<typeof recordAdminAudit>[1]) => recordAdminAudit(req, input);
+  const contentType = String(req.headers["content-type"] || "").toLowerCase();
+  const isMultipart = contentType.includes("multipart/form-data");
 
   if (req.method === "POST") {
-    try {
-      await runPlantAssetUpload(req, res);
-    } catch (error) {
-      return sendError(res, "UPLOAD_ERROR", (error as Error).message, 400);
+    let source: Record<string, unknown> = {};
+    let jsonFile = "";
+    let imageUrl = "";
+    const cleanupPaths: string[] = [];
+    let jsonUpload: UploadedAsset | undefined;
+    let imageUpload: UploadedAsset | undefined;
+
+    if (isMultipart) {
+      try {
+        await runPlantAssetUpload(req, res);
+      } catch (error) {
+        return sendError(res, "UPLOAD_ERROR", (error as Error).message, 400);
+      }
+
+      source = ((req.body || {}) as Record<string, unknown>);
+      const uploadedFiles =
+        ((req as NextApiRequest & { files?: Record<string, UploadedAsset[]> }).files || {}) as Record<string, UploadedAsset[]>;
+      jsonUpload = uploadedFiles.jsonFileUpload?.[0];
+      imageUpload = uploadedFiles.plantImageUpload?.[0];
+    } else {
+      try {
+        source = (await parseJsonBody(req)) as Record<string, unknown>;
+      } catch (error) {
+        if (error instanceof Error && error.message === "Request body too large") {
+          return sendError(res, "PAYLOAD_TOO_LARGE", "Request body is too large", 413);
+        }
+        return sendError(res, "INVALID_JSON", "Invalid JSON body", 400);
+      }
     }
 
-    const commonName = String(req.body.commonName || "").trim();
-    const scientificName = String(req.body.scientificName || "").trim();
-    const species = String(req.body.species || "").trim();
-    const confidenceScore = Number(req.body.confidenceScore || 0);
-    const safeName = toFileSafeToken(commonName);
+    const commonName = String(source.commonName || "").trim();
+    const scientificName = String(source.scientificName || "").trim();
+    const species = String(source.species || "").trim();
+    const confidenceScore = Number(source.confidenceScore || 0);
+    jsonFile = String(source.jsonFile || "").trim();
 
-    let jsonFile = String(req.body.jsonFile || "").trim();
-    let imageUrl = "";
-    const uploadedFiles = ((req as NextApiRequest & { files?: Record<string, UploadedAsset[]> }).files || {}) as Record<string, UploadedAsset[]>;
-    const jsonUpload = uploadedFiles.jsonFileUpload?.[0];
-    const imageUpload = uploadedFiles.plantImageUpload?.[0];
+    const safeName = toFileSafeToken(
+      commonName || jsonUpload?.originalname || imageUpload?.originalname || "plant"
+    );
 
     if (jsonUpload) {
       const uploadedPath = jsonUpload.path;
@@ -177,11 +214,13 @@ export default withMethods(["POST", "PUT", "DELETE"], async function handler(req
       await fs.mkdir(destDir, { recursive: true });
       const destPath = path.join(destDir, jsonFileName);
       await fs.rename(uploadedPath, destPath);
+      cleanupPaths.push(destPath);
       jsonFile = path.join("data", "plants", jsonFileName).replace(/\\/g, "/");
     }
 
     if (imageUpload) {
       if (!jsonFile) {
+        await cleanupUploadedAssets([...cleanupPaths, imageUpload.path]);
         return sendError(res, "VALIDATION_ERROR", "Provide JSON file (upload or path) when uploading an image", 422);
       }
 
@@ -191,6 +230,7 @@ export default withMethods(["POST", "PUT", "DELETE"], async function handler(req
       await fs.mkdir(publicPlantsDir, { recursive: true });
       const imageDestPath = path.join(publicPlantsDir, imageFileName);
       await fs.rename(imageUpload.path, imageDestPath);
+      cleanupPaths.push(imageDestPath);
       imageUrl = `/plants/${imageFileName}`;
     }
 
@@ -209,14 +249,15 @@ export default withMethods(["POST", "PUT", "DELETE"], async function handler(req
         status: "failure",
         metadata: { reason: "validation_error" }
       });
+      await cleanupUploadedAssets(cleanupPaths);
       return sendError(res, "VALIDATION_ERROR", "Invalid plant payload", 422, parsed.error.flatten());
     }
 
     try {
+      await readPlantJson(jsonFile);
       if (imageUrl) {
         await applyImageUrlToPlantJson(jsonFile, imageUrl);
       }
-      await readPlantJson(jsonFile);
     } catch {
       await audit({
         action: "plant.create",
@@ -225,6 +266,7 @@ export default withMethods(["POST", "PUT", "DELETE"], async function handler(req
         status: "failure",
         metadata: { reason: "invalid_json" }
       });
+      await cleanupUploadedAssets(cleanupPaths);
       return sendError(res, "INVALID_PLANT_JSON", "Uploaded JSON does not match required plant result structure", 422);
     }
 

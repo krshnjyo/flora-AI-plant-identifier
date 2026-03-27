@@ -15,7 +15,24 @@ export type LocalModelPrediction = {
   leafLikelihood: number;
   retrySuggested: boolean;
   retryMessage: string;
+  topClasses: Array<{
+    className: string;
+    confidence: number;
+  }>;
+  plantScores: Record<string, number>;
 };
+
+/**
+ * Confidence floor below which the model result is treated as unreliable for
+ * direct routing. This keeps weak predictions from being presented as factual
+ * plant/disease identifications.
+ */
+export const LOCAL_MODEL_MIN_CONFIDENCE = 0.8;
+export const LOCAL_MODEL_MIN_CLASS_MARGIN = 0.18;
+export const LOCAL_MODEL_MIN_PLANT_SCORE = 0.72;
+
+const SUPPORTED_PLANT_NAMES = new Set(["Pepper", "Potato", "Tomato"]);
+const SUPPORTED_DISEASE_NAMES = new Set(["", "Bacterial Spot", "Early Blight", "Late Blight"]);
 
 type ModelClassMapping = {
   plantName: string;
@@ -220,6 +237,49 @@ function readPlantFromScores(payload: Record<string, unknown>) {
   return bestPlant;
 }
 
+function readTopClasses(payload: Record<string, unknown>) {
+  const raw = payload.top_classes;
+  if (!Array.isArray(raw)) {
+    return [];
+  }
+
+  return raw
+    .map((entry) => {
+      if (!entry || typeof entry !== "object") {
+        return null;
+      }
+
+      const className =
+        readStringField(entry as Record<string, unknown>, ["class", "label", "predicted_class", "predictedClass"]) || "";
+      const confidence = toFiniteNumber((entry as Record<string, unknown>).confidence);
+      if (!className) {
+        return null;
+      }
+
+      return {
+        className,
+        confidence
+      };
+    })
+    .filter((entry): entry is { className: string; confidence: number } => Boolean(entry));
+}
+
+function normalizePlantScores(payload: Record<string, unknown>) {
+  const raw = payload.plant_scores;
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
+    return {};
+  }
+
+  const out: Record<string, number> = {};
+  for (const [plant, score] of Object.entries(raw as Record<string, unknown>)) {
+    const normalizedPlant = normalizePlantName(plant);
+    if (!normalizedPlant) continue;
+    out[normalizedPlant] = toFiniteNumber(score);
+  }
+
+  return out;
+}
+
 function buildSyntheticClassLabel(plantName: string, diseaseName: string, isHealthy: boolean) {
   const plantToken = plantName ? normalizeClassName(plantName) : "unknown_plant";
   if (diseaseName) {
@@ -282,6 +342,8 @@ export function decodeLocalModelPayload(payload: Record<string, unknown>) {
   const predictedClass = rawPredictedClass || buildSyntheticClassLabel(plantName, diseaseName, isHealthy);
   const confidence = toFiniteNumber(payload.confidence ?? payload.score ?? payload.probability);
   const leafLikelihood = toFiniteNumber(payload.leaf_likelihood ?? payload.leafLikelihood);
+  const topClasses = readTopClasses(payload);
+  const plantScores = normalizePlantScores(payload);
 
   return {
     predictedClass,
@@ -291,8 +353,86 @@ export function decodeLocalModelPayload(payload: Record<string, unknown>) {
     isHealthy,
     leafLikelihood,
     retrySuggested,
-    retryMessage
+    retryMessage,
+    topClasses,
+    plantScores
   } satisfies LocalModelPrediction;
+}
+
+/**
+ * Identifies predictions that should be rejected before catalog matching.
+ * The threshold is intentionally conservative so only clearly weak outputs are
+ * sent back for another image instead of creating a misleading result page.
+ */
+export function isLowConfidencePrediction(prediction: Pick<LocalModelPrediction, "confidence">) {
+  return prediction.confidence < LOCAL_MODEL_MIN_CONFIDENCE;
+}
+
+/**
+ * Only catalog-supported plant and disease outputs should be allowed through to
+ * result routing. Unsupported disease labels are treated as unrecognizable
+ * rather than silently mapped to the nearest known result page.
+ */
+export function isSupportedCatalogPrediction(
+  prediction: Pick<LocalModelPrediction, "plantName" | "diseaseName">
+) {
+  return SUPPORTED_PLANT_NAMES.has(prediction.plantName) && SUPPORTED_DISEASE_NAMES.has(prediction.diseaseName);
+}
+
+function getTopClassMargin(
+  prediction: Pick<LocalModelPrediction, "topClasses" | "confidence">
+) {
+  if (!prediction.topClasses.length) {
+    return prediction.confidence;
+  }
+
+  const [topClass, runnerUp] = prediction.topClasses;
+  if (!runnerUp) {
+    return topClass.confidence;
+  }
+
+  return topClass.confidence - runnerUp.confidence;
+}
+
+function getTopPlantScore(prediction: Pick<LocalModelPrediction, "plantScores">) {
+  const scores = Object.values(prediction.plantScores);
+  return scores.length ? Math.max(...scores) : 0;
+}
+
+function getTopPlantScoreMargin(prediction: Pick<LocalModelPrediction, "plantScores">) {
+  const scores = Object.values(prediction.plantScores).sort((left, right) => right - left);
+  if (!scores.length) {
+    return 0;
+  }
+
+  return scores[0] - (scores[1] ?? 0);
+}
+
+/**
+ * Closed-set classifiers will always emit one of the known classes, even for
+ * out-of-domain leaves. Require a stronger winning score and class margin
+ * before allowing routing into a catalog result page.
+ */
+export function shouldRetryCatalogPrediction(
+  prediction: Pick<LocalModelPrediction, "confidence" | "topClasses" | "plantScores">
+) {
+  if (isLowConfidencePrediction(prediction)) {
+    return true;
+  }
+
+  if (getTopClassMargin(prediction) < LOCAL_MODEL_MIN_CLASS_MARGIN) {
+    return true;
+  }
+
+  if (getTopPlantScore(prediction) < LOCAL_MODEL_MIN_PLANT_SCORE) {
+    return true;
+  }
+
+  // Even when the winning plant score clears the minimum, an out-of-catalog
+  // leaf can still be forced into the closest known crop. Requiring a visible
+  // gap between the best and second-best plant family reduces those false
+  // positives without changing the response contract.
+  return getTopPlantScoreMargin(prediction) < 0.18;
 }
 
 export async function identifyWithLocalModel(filePath: string, mimeType: string) {

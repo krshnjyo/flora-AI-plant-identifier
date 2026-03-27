@@ -10,7 +10,6 @@ import { invalidateAuthGuardCache, requireUser } from "@/lib/auth-guards";
 import { buildAuthCookie, signToken } from "@/lib/auth";
 import { getPool } from "@/lib/db";
 import { sendError, sendSuccess } from "@/lib/response";
-import { ensureUserProfileTable } from "@/lib/user-profile";
 
 type ProfileRow = {
   user_id: number;
@@ -108,7 +107,6 @@ export default withMethods(["GET", "PUT"], async function handler(req: NextApiRe
   const user = await requireUser(req, res);
   if (!user) return;
 
-  await ensureUserProfileTable();
   if (req.method === "GET") {
     const profile = await getProfile(user.userId);
     if (!profile) {

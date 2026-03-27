@@ -41,6 +41,8 @@ export const env = {
   jwtSecret: readEnv("JWT_SECRET"),
   jwtIssuer: readEnv("JWT_ISSUER", "flora-api"),
   jwtAudience: readEnv("JWT_AUDIENCE", "flora-client"),
+  authCookieSameSite: readEnv("AUTH_COOKIE_SAMESITE", "strict"),
+  authCookieDomain: readEnv("AUTH_COOKIE_DOMAIN"),
 
   // Local model inference service
   localModelEndpoint: readEnv("LOCAL_MODEL_ENDPOINT", "http://127.0.0.1:5050/predict"),
@@ -52,6 +54,28 @@ export const env = {
   // Security
   corsOrigin: readEnv("CORS_ORIGIN", "http://localhost:3000,http://127.0.0.1:3000")
 };
+
+const insecureJwtSecretValues = new Set([
+  "your_jwt_secret_key_here",
+  "changeme",
+  "change-me",
+  "replace-me",
+  "secret",
+  "jwt-secret"
+]);
+
+/**
+ * Production auth must not run on placeholder or trivially short secrets.
+ * Keeping the check here gives all auth callers one consistent safety gate.
+ */
+export function hasSecureJwtSecret(secret = env.jwtSecret) {
+  if (!secret) return false;
+  const normalized = secret.trim().toLowerCase();
+  if (insecureJwtSecretValues.has(normalized)) {
+    return false;
+  }
+  return secret.length >= 32;
+}
 
 /**
  * Parse comma-separated CORS origins once and reuse.
@@ -83,4 +107,26 @@ export function assertDatabaseEnv() {
   if (missing.length > 0) {
     throw new Error(`Missing required DB env vars: ${missing.join(", ")}`);
   }
+}
+
+/**
+ * Auth routes must fail fast when JWT signing is misconfigured. Running with a
+ * placeholder secret would make every token forgeable.
+ */
+export function assertAuthEnv() {
+  if (!env.jwtSecret) {
+    throw new Error("Missing required auth env var: JWT_SECRET");
+  }
+
+  if (!hasSecureJwtSecret(env.jwtSecret)) {
+    throw new Error("JWT_SECRET is insecure. Use a unique secret with at least 32 characters.");
+  }
+}
+
+export function getAuthCookieSameSite() {
+  const normalized = env.authCookieSameSite.trim().toLowerCase();
+  if (normalized === "lax" || normalized === "none") {
+    return normalized;
+  }
+  return "strict";
 }

@@ -14,7 +14,7 @@
 
 /* eslint-disable @next/next/no-img-element -- Dynamic backend-served scan images intentionally bypass Next image optimization to preserve direct uploaded asset rendering. */
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
 import { ArrowUpRight, Leaf, ScanSearch, ShieldAlert } from "lucide-react";
@@ -33,7 +33,26 @@ type ScanHistory = {
   created_at: string;
 };
 
+type HistorySummary = {
+  total: number;
+  withDisease: number;
+  healthy: number;
+  topDetections: Array<readonly [string, number]>;
+};
+
+type HistoryResponse = {
+  items: ScanHistory[];
+  page: number;
+  limit: number;
+  total: number;
+  totalPages: number;
+  hasMore: boolean;
+  summary: HistorySummary;
+};
+
 type HistoryPanelKey = "overview" | "timeline" | "records" | "visuals" | "mix" | "actions";
+
+const HISTORY_PAGE_SIZE = 12;
 
 function toHistoryTimestamp(value: string) {
   const parsed = new Date(value).getTime();
@@ -78,9 +97,58 @@ function SummaryCard({
   );
 }
 
+function PaginationControls({
+  page,
+  totalPages,
+  onPrevious,
+  onNext
+}: {
+  page: number;
+  totalPages: number;
+  onPrevious: () => void;
+  onNext: () => void;
+}) {
+  if (totalPages <= 1) {
+    return null;
+  }
+
+  return (
+    <div className="mt-4 flex items-center justify-between gap-3">
+      <button
+        type="button"
+        onClick={onPrevious}
+        disabled={page <= 1}
+        className="inline-flex h-10 items-center justify-center rounded-full border border-zinc-900/12 bg-white px-4 font-mono text-[11px] uppercase tracking-[0.16em] text-zinc-900 transition-colors hover:bg-zinc-50 disabled:cursor-not-allowed disabled:opacity-45"
+      >
+        Previous
+      </button>
+      <p className="font-mono text-[10px] uppercase tracking-[0.16em] text-zinc-500">
+        Page {page} of {totalPages}
+      </p>
+      <button
+        type="button"
+        onClick={onNext}
+        disabled={page >= totalPages}
+        className="inline-flex h-10 items-center justify-center rounded-full border border-zinc-900/12 bg-white px-4 font-mono text-[11px] uppercase tracking-[0.16em] text-zinc-900 transition-colors hover:bg-zinc-50 disabled:cursor-not-allowed disabled:opacity-45"
+      >
+        Next
+      </button>
+    </div>
+  );
+}
+
 export default function HistoryPage() {
   const router = useRouter();
   const [items, setItems] = useState<ScanHistory[]>([]);
+  const [summary, setSummary] = useState<HistorySummary>({
+    total: 0,
+    withDisease: 0,
+    healthy: 0,
+    topDetections: []
+  });
+  const [page, setPage] = useState(1);
+  const [totalPages, setTotalPages] = useState(1);
+  const [totalItems, setTotalItems] = useState(0);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
   const [selectedPanelKey, setSelectedPanelKey] = useState<HistoryPanelKey | "">("");
@@ -88,7 +156,10 @@ export default function HistoryPage() {
   useEffect(() => {
     let cancelled = false;
 
-    apiFetchJson<ScanHistory[]>("/api/history", { cache: "no-store" })
+    setLoading(true);
+    setError("");
+
+    apiFetchJson<HistoryResponse>(`/api/history?page=${page}&limit=${HISTORY_PAGE_SIZE}`, { cache: "no-store" })
       .then(({ response, json }) => {
         if (cancelled) {
           return;
@@ -104,11 +175,15 @@ export default function HistoryPage() {
           return;
         }
 
-        const sortedItems = [...json.data].sort((a, b) => {
+        const sortedItems = [...json.data.items].sort((a, b) => {
           return toHistoryTimestamp(b.created_at) - toHistoryTimestamp(a.created_at);
         });
 
         setItems(sortedItems);
+        setSummary(json.data.summary);
+        setPage(json.data.page);
+        setTotalPages(json.data.totalPages);
+        setTotalItems(json.data.total);
       })
       .catch(() => {
         if (!cancelled) {
@@ -124,24 +199,7 @@ export default function HistoryPage() {
     return () => {
       cancelled = true;
     };
-  }, [router]);
-
-  const summary = useMemo(() => {
-    let withDisease = 0;
-    const diseaseCount = new Map<string, number>();
-    for (const item of items) {
-      if (!item.disease_name) continue;
-      withDisease += 1;
-      diseaseCount.set(item.disease_name, (diseaseCount.get(item.disease_name) || 0) + 1);
-    }
-
-    const topDetections = Array.from(diseaseCount.entries())
-      .sort((a, b) => b[1] - a[1])
-      .slice(0, 6);
-
-    const total = items.length;
-    return { total, withDisease, healthy: total - withDisease, topDetections };
-  }, [items]);
+  }, [page, router]);
 
   const hasItems = items.length > 0;
   const latestItem = items[0] ?? null;
@@ -173,7 +231,7 @@ export default function HistoryPage() {
       key: "records",
       label: "Records",
       title: "Data Table",
-      description: `${Math.min(items.length, 12)} recent rows with plant, disease, image, and time.`
+      description: `${items.length} rows on this page · ${totalItems} stored overall.`
     },
     {
       key: "visuals",
@@ -229,72 +287,88 @@ export default function HistoryPage() {
         );
       case "timeline":
         return (
-          <div className="space-y-3">
-            {hasItems ? (
-              recentItems.map((item, index) => (
-                <div key={`timeline-${item.scan_id}`} className="flex items-start gap-3 rounded-[24px] border border-zinc-900/10 bg-white p-4">
-                  <div className="flex w-7 shrink-0 flex-col items-center">
-                    <span className="mt-1 h-2.5 w-2.5 rounded-full bg-zinc-900" />
-                    {index !== recentItems.length - 1 ? <span className="mt-2 h-full w-px bg-zinc-200" /> : null}
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="min-w-0">
-                        <p className="truncate text-sm font-semibold text-zinc-900">{item.plant_name || "Unknown specimen"}</p>
-                        <p className={item.disease_name ? "mt-1 text-xs text-rose-600" : "mt-1 text-xs text-emerald-700"}>
-                          {item.disease_name || "Healthy"}
+          <div>
+            <div className="space-y-3">
+              {hasItems ? (
+                recentItems.map((item, index) => (
+                  <div key={`timeline-${item.scan_id}`} className="flex items-start gap-3 rounded-[24px] border border-zinc-900/10 bg-white p-4">
+                    <div className="flex w-7 shrink-0 flex-col items-center">
+                      <span className="mt-1 h-2.5 w-2.5 rounded-full bg-zinc-900" />
+                      {index !== recentItems.length - 1 ? <span className="mt-2 h-full w-px bg-zinc-200" /> : null}
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <p className="truncate text-sm font-semibold text-zinc-900">{item.plant_name || "Unknown specimen"}</p>
+                          <p className={item.disease_name ? "mt-1 text-xs text-rose-600" : "mt-1 text-xs text-emerald-700"}>
+                            {item.disease_name || "Healthy"}
+                          </p>
+                        </div>
+                        <p className="shrink-0 font-mono text-[10px] uppercase tracking-[0.14em] text-zinc-500">
+                          {formatHistoryDate(item.created_at)}
                         </p>
                       </div>
-                      <p className="shrink-0 font-mono text-[10px] uppercase tracking-[0.14em] text-zinc-500">
-                        {formatHistoryDate(item.created_at)}
-                      </p>
                     </div>
                   </div>
+                ))
+              ) : (
+                <div className="rounded-[24px] border border-dashed border-zinc-300 bg-zinc-50/80 px-4 py-5 text-sm leading-relaxed text-zinc-500">
+                  Your recent scan rhythm will appear here as soon as you complete the first identify run.
                 </div>
-              ))
-            ) : (
-              <div className="rounded-[24px] border border-dashed border-zinc-300 bg-zinc-50/80 px-4 py-5 text-sm leading-relaxed text-zinc-500">
-                Your recent scan rhythm will appear here as soon as you complete the first identify run.
-              </div>
-            )}
+              )}
+            </div>
+            <PaginationControls
+              page={page}
+              totalPages={totalPages}
+              onPrevious={() => setPage((previous) => Math.max(previous - 1, 1))}
+              onNext={() => setPage((previous) => Math.min(previous + 1, totalPages))}
+            />
           </div>
         );
       case "records":
         return hasItems ? (
-          <div className="w-full overflow-x-auto">
-            <Table>
-              <TableHeader>
-                <TableRow className="border-zinc-900/10">
-                  <TableHead className="font-mono text-[10px] uppercase tracking-[0.16em] text-zinc-500">Plant</TableHead>
-                  <TableHead className="font-mono text-[10px] uppercase tracking-[0.16em] text-zinc-500">Disease</TableHead>
-                  <TableHead className="font-mono text-[10px] uppercase tracking-[0.16em] text-zinc-500">Image</TableHead>
-                  <TableHead className="font-mono text-[10px] uppercase tracking-[0.16em] text-zinc-500">Scanned At</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {items.slice(0, 12).map((item) => (
-                  <TableRow key={item.scan_id} className="border-zinc-900/10">
-                    <TableCell className="font-medium text-zinc-800">{item.plant_name || "-"}</TableCell>
-                    <TableCell className={item.disease_name ? "text-red-600" : "text-zinc-500"}>{item.disease_name || "Healthy"}</TableCell>
-                    <TableCell>
-                      {item.image_url ? (
-                        <img
-                          src={toAssetUrl(item.image_url)}
-                          alt={item.plant_name || "Scan thumbnail"}
-                          width={44}
-                          height={44}
-                          loading="lazy"
-                          className="h-11 w-11 rounded-xl border border-zinc-200 object-cover"
-                        />
-                      ) : (
-                        <span className="text-xs text-zinc-400">No image</span>
-                      )}
-                    </TableCell>
-                    <TableCell className="font-mono text-xs text-zinc-500">{formatHistoryTimestamp(item.created_at)}</TableCell>
+          <div>
+            <div className="w-full overflow-x-auto">
+              <Table>
+                <TableHeader>
+                  <TableRow className="border-zinc-900/10">
+                    <TableHead className="font-mono text-[10px] uppercase tracking-[0.16em] text-zinc-500">Plant</TableHead>
+                    <TableHead className="font-mono text-[10px] uppercase tracking-[0.16em] text-zinc-500">Disease</TableHead>
+                    <TableHead className="font-mono text-[10px] uppercase tracking-[0.16em] text-zinc-500">Image</TableHead>
+                    <TableHead className="font-mono text-[10px] uppercase tracking-[0.16em] text-zinc-500">Scanned At</TableHead>
                   </TableRow>
-                ))}
-              </TableBody>
-            </Table>
+                </TableHeader>
+                <TableBody>
+                  {items.map((item) => (
+                    <TableRow key={item.scan_id} className="border-zinc-900/10">
+                      <TableCell className="font-medium text-zinc-800">{item.plant_name || "-"}</TableCell>
+                      <TableCell className={item.disease_name ? "text-red-600" : "text-zinc-500"}>{item.disease_name || "Healthy"}</TableCell>
+                      <TableCell>
+                        {item.image_url ? (
+                          <img
+                            src={toAssetUrl(item.image_url)}
+                            alt={item.plant_name || "Scan thumbnail"}
+                            width={44}
+                            height={44}
+                            loading="lazy"
+                            className="h-11 w-11 rounded-xl border border-zinc-200 object-cover"
+                          />
+                        ) : (
+                          <span className="text-xs text-zinc-400">No image</span>
+                        )}
+                      </TableCell>
+                      <TableCell className="font-mono text-xs text-zinc-500">{formatHistoryTimestamp(item.created_at)}</TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+            <PaginationControls
+              page={page}
+              totalPages={totalPages}
+              onPrevious={() => setPage((previous) => Math.max(previous - 1, 1))}
+              onNext={() => setPage((previous) => Math.min(previous + 1, totalPages))}
+            />
           </div>
         ) : (
           <div className="rounded-[24px] border border-dashed border-zinc-300 bg-zinc-50/80 px-4 py-5 text-sm leading-relaxed text-zinc-500">
@@ -303,39 +377,47 @@ export default function HistoryPage() {
         );
       case "visuals":
         return (
-          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-            {hasItems ? (
-              visualItems.map((item) => (
-                <div key={`visual-${item.scan_id}`} className="overflow-hidden rounded-[22px] border border-zinc-900/12 bg-zinc-100 shadow-[0_12px_24px_rgba(24,24,27,0.05)]">
-                  {item.image_url ? (
-                    <img
-                      src={toAssetUrl(item.image_url)}
-                      alt={item.plant_name || "History scan"}
-                      width={260}
-                      height={180}
-                      loading="lazy"
-                      className="h-28 w-full object-cover"
-                    />
-                  ) : (
-                    <div className="grid h-28 place-items-center text-xs text-zinc-400">No image</div>
-                  )}
-                  <div className="px-3 py-2.5">
-                    <p className="truncate text-xs font-semibold text-zinc-800">{item.plant_name || "Unknown specimen"}</p>
-                    <p className={item.disease_name ? "truncate text-[11px] text-rose-600" : "truncate text-[11px] text-zinc-500"}>
-                      {item.disease_name || "Healthy"}
-                    </p>
+          <div>
+            <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+              {hasItems ? (
+                visualItems.map((item) => (
+                  <div key={`visual-${item.scan_id}`} className="overflow-hidden rounded-[22px] border border-zinc-900/12 bg-zinc-100 shadow-[0_12px_24px_rgba(24,24,27,0.05)]">
+                    {item.image_url ? (
+                      <img
+                        src={toAssetUrl(item.image_url)}
+                        alt={item.plant_name || "History scan"}
+                        width={260}
+                        height={180}
+                        loading="lazy"
+                        className="h-28 w-full object-cover"
+                      />
+                    ) : (
+                      <div className="grid h-28 place-items-center text-xs text-zinc-400">No image</div>
+                    )}
+                    <div className="px-3 py-2.5">
+                      <p className="truncate text-xs font-semibold text-zinc-800">{item.plant_name || "Unknown specimen"}</p>
+                      <p className={item.disease_name ? "truncate text-[11px] text-rose-600" : "truncate text-[11px] text-zinc-500"}>
+                        {item.disease_name || "Healthy"}
+                      </p>
+                    </div>
                   </div>
-                </div>
-              ))
-            ) : (
-              Array.from({ length: 6 }).map((_, index) => (
-                <div key={`placeholder-visual-${index}`} className="rounded-[22px] border border-zinc-900/12 bg-white/85 p-3">
-                  <div className="h-16 w-full rounded-2xl bg-zinc-100" />
-                  <p className="mt-2 font-mono text-[10px] uppercase tracking-[0.16em] text-zinc-500">Pending</p>
-                  <p className="mt-1 text-xs text-zinc-600">Awaiting your next scan image.</p>
-                </div>
-              ))
-            )}
+                ))
+              ) : (
+                Array.from({ length: 6 }).map((_, index) => (
+                  <div key={`placeholder-visual-${index}`} className="rounded-[22px] border border-zinc-900/12 bg-white/85 p-3">
+                    <div className="h-16 w-full rounded-2xl bg-zinc-100" />
+                    <p className="mt-2 font-mono text-[10px] uppercase tracking-[0.16em] text-zinc-500">Pending</p>
+                    <p className="mt-1 text-xs text-zinc-600">Awaiting your next scan image.</p>
+                  </div>
+                ))
+              )}
+            </div>
+            <PaginationControls
+              page={page}
+              totalPages={totalPages}
+              onPrevious={() => setPage((previous) => Math.max(previous - 1, 1))}
+              onNext={() => setPage((previous) => Math.min(previous + 1, totalPages))}
+            />
           </div>
         );
       case "mix":

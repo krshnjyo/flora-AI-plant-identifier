@@ -7,6 +7,7 @@
 
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import Image from "next/image";
+import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
 import { Camera, Save, ShieldCheck } from "lucide-react";
 import { CenteredPageHero } from "@/components/layout/showcase-shell";
@@ -126,6 +127,7 @@ function PreferenceRow({
 }
 
 export default function SettingsPage() {
+  const router = useRouter();
   const avatarInputRef = useRef<HTMLInputElement>(null);
 
   const [loading, setLoading] = useState(true);
@@ -150,6 +152,11 @@ export default function SettingsPage() {
 
   useHomeLocked();
 
+  const redirectToLogin = () => {
+    notifyAuthChanged();
+    router.replace("/login");
+  };
+
   useEffect(() => {
     localStorage.setItem(LOCAL_PREF_KEY, JSON.stringify({ defaultOutput: preferences.defaultOutput }));
   }, [preferences.defaultOutput]);
@@ -162,6 +169,12 @@ export default function SettingsPage() {
       try {
         const localDefault = readStoredDefaultOutput();
         const { response, json } = await apiFetchJson<ProfilePayload>("/api/account/profile");
+
+        if (response.status === 401) {
+          notifyAuthChanged();
+          router.replace("/login");
+          return;
+        }
 
         if (!response.ok || !json?.success) {
           setStatus(getApiErrorMessage(json, "Failed to load account settings"));
@@ -187,10 +200,9 @@ export default function SettingsPage() {
     };
 
     void loadProfile();
-  }, []);
+  }, [router]);
 
   const avatarSrc = useMemo(() => toAssetUrl(profile?.avatarUrl || ""), [profile?.avatarUrl]);
-  const notificationState = preferences.scanNotifications || preferences.emailNotifications || preferences.incidentAlerts ? "On" : "Off";
   const panelButtons: Array<{
     key: SettingsPanelKey;
     label: string;
@@ -228,14 +240,14 @@ export default function SettingsPage() {
       key: "notifications",
       label: "Alerts",
       title: "Notifications",
-      description: `${notificationState} across scan, email, and incident channels.`,
+      description: "Delivery channels are not configured in this build.",
       tone: "accent"
     },
     {
       key: "security",
       label: "Security",
-      title: "Retention + 2FA",
-      description: `${preferences.auditRetentionDays} day retention · ${preferences.twoFactorEnabled ? "2FA enabled" : "2FA disabled"}.`
+      title: "Retention Controls",
+      description: `${preferences.auditRetentionDays} day retention · 2FA not available in this build.`
     }
   ];
 
@@ -437,71 +449,21 @@ export default function SettingsPage() {
         );
       case "notifications":
         return (
-          <form className="mx-auto w-full max-w-[42rem]" onSubmit={savePreferences}>
-            <PreferenceRow
-              label="Scan notifications"
-              description="Receive in-app alerts for scan completion and result states."
-              control={
-                <ToggleControl
-                  checked={preferences.scanNotifications}
-                  onClick={() => setPreferences((previous) => ({ ...previous, scanNotifications: !previous.scanNotifications }))}
-                />
-              }
-            />
-            <PreferenceRow
-              label="Email notifications"
-              description="Allow summary messages for account and identification updates."
-              control={
-                <ToggleControl
-                  checked={preferences.emailNotifications}
-                  onClick={() => setPreferences((previous) => ({ ...previous, emailNotifications: !previous.emailNotifications }))}
-                />
-              }
-            />
-            <PreferenceRow
-              label="Login alerts"
-              description="Get alerts when your account is accessed from a new session."
-              control={
-                <ToggleControl
-                  checked={preferences.loginAlerts}
-                  onClick={() => setPreferences((previous) => ({ ...previous, loginAlerts: !previous.loginAlerts }))}
-                />
-              }
-            />
-            <PreferenceRow
-              label="Incident alerts"
-              description="Enable alerts for system incidents that affect scan reliability."
-              control={
-                <ToggleControl
-                  checked={preferences.incidentAlerts}
-                  onClick={() => setPreferences((previous) => ({ ...previous, incidentAlerts: !previous.incidentAlerts }))}
-                />
-              }
-            />
-            <div className="pt-4">
-              <button
-                type="submit"
-                disabled={savingPreferences}
-                className="inline-flex h-11 items-center justify-center rounded-full bg-zinc-900 px-5 font-mono text-xs uppercase tracking-[0.16em] text-white transition-colors hover:bg-black disabled:opacity-60"
-              >
-                {savingPreferences ? "Saving..." : "Save Alerts"}
-              </button>
-            </div>
-          </form>
+          <div className="mx-auto w-full max-w-[42rem] rounded-[28px] border border-zinc-900/10 bg-zinc-50/85 p-5">
+            <p className="font-mono text-[10px] uppercase tracking-[0.18em] text-zinc-500">Notifications</p>
+            <p className="mt-3 text-sm leading-relaxed text-zinc-600">
+              Email, login, scan, and incident notifications are not wired to a delivery service in this build. The stored
+              preference fields remain for compatibility, but no outbound notification pipeline exists yet.
+            </p>
+          </div>
         );
       case "security":
         return (
           <form className="mx-auto w-full max-w-[42rem]" onSubmit={savePreferences}>
-            <PreferenceRow
-              label="Two-factor authentication"
-              description="Enable extra verification requirement for sign-in."
-              control={
-                <ToggleControl
-                  checked={preferences.twoFactorEnabled}
-                  onClick={() => setPreferences((previous) => ({ ...previous, twoFactorEnabled: !previous.twoFactorEnabled }))}
-                />
-              }
-            />
+            <div className="rounded-[24px] border border-zinc-900/10 bg-zinc-50/85 px-4 py-4 text-sm leading-relaxed text-zinc-600">
+              <p className="font-mono text-[10px] uppercase tracking-[0.16em] text-zinc-500">Two-Factor Authentication</p>
+              <p className="mt-3">Two-factor authentication is not implemented in this build. It is intentionally not exposed as an active control.</p>
+            </div>
             <PreferenceRow
               label="Audit log retention"
               description="Set how long account and activity audit events are retained."
@@ -555,6 +517,11 @@ export default function SettingsPage() {
         body: JSON.stringify(payload)
       });
 
+      if (response.status === 401) {
+        redirectToLogin();
+        return;
+      }
+
       if (!response.ok || !json?.success) {
         setStatus(getApiErrorMessage(json, "Profile update failed"));
         return;
@@ -593,6 +560,11 @@ export default function SettingsPage() {
         })
       });
 
+      if (response.status === 401) {
+        redirectToLogin();
+        return;
+      }
+
       if (!response.ok || !json?.success) {
         setStatus(getApiErrorMessage(json, "Password update failed"));
         return;
@@ -620,6 +592,11 @@ export default function SettingsPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ preferences })
       });
+
+      if (response.status === 401) {
+        redirectToLogin();
+        return;
+      }
 
       if (!response.ok || !json?.success) {
         setStatus(getApiErrorMessage(json, "Preferences update failed"));
@@ -655,6 +632,12 @@ export default function SettingsPage() {
         body: formData
       });
       const json = await response.json().catch(() => null);
+
+      if (response.status === 401) {
+        redirectToLogin();
+        return;
+      }
+
       if (!response.ok || !json?.success) {
         setStatus(getApiErrorMessage(json, "Avatar upload failed"));
         return;
@@ -681,6 +664,12 @@ export default function SettingsPage() {
       const { response, json } = await apiFetchJson<{ avatarUrl: string }>("/api/account/avatar", {
         method: "DELETE"
       });
+
+      if (response.status === 401) {
+        redirectToLogin();
+        return;
+      }
+
       if (!response.ok || !json?.success) {
         setStatus(getApiErrorMessage(json, "Avatar remove failed"));
         return;
@@ -739,9 +728,9 @@ export default function SettingsPage() {
                 <div className="flex items-start justify-between gap-3">
                   <p className="font-mono text-[10px] uppercase tracking-[0.18em] text-zinc-500">Account Preview</p>
                   <span className="inline-flex items-center rounded-full border border-zinc-900/12 bg-zinc-50 px-3 py-1 font-mono text-[10px] uppercase tracking-[0.14em] text-zinc-700">
-                    {profile?.role || "user"}
-                  </span>
-                </div>
+                  {profile?.role || "user"}
+                </span>
+              </div>
 
                 <div className="mt-5 flex items-center gap-4">
                   <div className="relative h-24 w-24 overflow-hidden rounded-full border border-zinc-900/10 bg-zinc-50">
@@ -776,7 +765,7 @@ export default function SettingsPage() {
                   </article>
                   <article className="rounded-[22px] border border-zinc-900/10 bg-zinc-50/85 px-4 py-3">
                     <p className="font-mono text-[10px] uppercase tracking-[0.16em] text-zinc-500">Notifications</p>
-                    <p className="mt-2 text-xl font-semibold text-zinc-950">{notificationState}</p>
+                    <p className="mt-2 text-xl font-semibold text-zinc-950">Manual</p>
                   </article>
                   <article className="rounded-[22px] border border-zinc-900/10 bg-zinc-50/85 px-4 py-3">
                     <p className="font-mono text-[10px] uppercase tracking-[0.16em] text-zinc-500">Retention</p>
@@ -787,8 +776,8 @@ export default function SettingsPage() {
                 <div className="mt-5 rounded-[24px] border border-zinc-900/10 bg-zinc-50/85 px-4 py-4">
                   <p className="font-mono text-[10px] uppercase tracking-[0.16em] text-zinc-500">Workspace Notes</p>
                   <div className="mt-3 space-y-2 text-sm leading-relaxed text-zinc-600">
-                    <p>Use the selector grid on the left to move between identity, avatar, password, output, alert, and security controls.</p>
-                    <p>All changes still write through the same account endpoints and local default-output storage.</p>
+                    <p>Use the selector grid on the left to move between identity, avatar, password, output, alerts, and security controls.</p>
+                    <p>Output preferences and audit retention are live. Notifications and 2FA remain intentionally unavailable in this build.</p>
                   </div>
                 </div>
               </motion.aside>

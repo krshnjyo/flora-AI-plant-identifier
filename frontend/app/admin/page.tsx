@@ -53,12 +53,31 @@ type PlantRecord = {
   species: string;
 };
 
+type PaginatedUsersResponse = {
+  items: User[];
+  page: number;
+  limit: number;
+  total: number;
+  totalPages: number;
+  hasMore: boolean;
+};
+
 type AdminPanelKey = "plants" | "diseases" | "relations" | "sync" | "uploads" | "users";
+
+const USERS_PAGE_SIZE = 12;
 
 export default function AdminPage() {
   const [authorized, setAuthorized] = useState<boolean | null>(null);
   const [stats, setStats] = useState<Stats | null>(null);
   const [users, setUsers] = useState<User[]>([]);
+  const [usersPage, setUsersPage] = useState(1);
+  const [usersMeta, setUsersMeta] = useState({
+    page: 1,
+    limit: USERS_PAGE_SIZE,
+    total: 0,
+    totalPages: 1,
+    hasMore: false
+  });
   const [plants, setPlants] = useState<PlantRecord[]>([]);
   const [deletePlantId, setDeletePlantId] = useState("");
   const [status, setStatus] = useState("");
@@ -76,7 +95,7 @@ export default function AdminPage() {
    *   single transient failure does not flip the whole page into an
    *   unauthorized state after auth already succeeded.
    */
-  const loadAll = useCallback(async () => {
+  const loadAll = useCallback(async (requestedUsersPage = usersPage) => {
     const me = await apiFetchJson<{ user: { role: "user" | "admin" } }>("/api/auth/me");
     if (!me.response.ok || !me.json?.success || me.json.data.user.role !== "admin") {
       setAuthorized(false);
@@ -87,7 +106,7 @@ export default function AdminPage() {
 
     const [statsResponse, usersResponse, plantsResponse] = await Promise.allSettled([
       apiFetchJson<Stats>("/api/admin/stats"),
-      apiFetchJson<User[]>("/api/admin/users"),
+      apiFetchJson<PaginatedUsersResponse>(`/api/admin/users?page=${requestedUsersPage}&limit=${USERS_PAGE_SIZE}`),
       apiFetchJson<PlantRecord[]>("/api/plants")
     ]);
 
@@ -96,7 +115,19 @@ export default function AdminPage() {
     }
 
     if (usersResponse.status === "fulfilled" && usersResponse.value.response.ok && usersResponse.value.json?.success) {
-      setUsers(usersResponse.value.json.data);
+      const nextUsers = usersResponse.value.json.data;
+      if (requestedUsersPage > nextUsers.totalPages && nextUsers.totalPages > 0) {
+        setUsersPage(nextUsers.totalPages);
+      } else {
+        setUsers(nextUsers.items);
+        setUsersMeta({
+          page: nextUsers.page,
+          limit: nextUsers.limit,
+          total: nextUsers.total,
+          totalPages: nextUsers.totalPages,
+          hasMore: nextUsers.hasMore
+        });
+      }
     }
 
     if (
@@ -114,7 +145,7 @@ export default function AdminPage() {
         }))
       );
     }
-  }, []);
+  }, [usersPage]);
 
   useEffect(() => {
     loadAll().catch(() => {
@@ -179,7 +210,7 @@ export default function AdminPage() {
       key: "users",
       label: "Access",
       title: "User Controls",
-      description: `${users.length} user accounts with editable roles and status.`
+      description: `${usersMeta.total} user accounts with editable roles and status.`
     }
   ];
 
@@ -423,54 +454,79 @@ export default function AdminPage() {
         );
       case "users":
         return (
-          <div className="w-full overflow-x-auto">
-            <Table>
-              <TableHeader>
-                <TableRow className="border-zinc-900/10">
-                  <TableHead className="font-mono text-[10px] uppercase tracking-[0.16em] text-zinc-500">Name</TableHead>
-                  <TableHead className="font-mono text-[10px] uppercase tracking-[0.16em] text-zinc-500">Email</TableHead>
-                  <TableHead className="font-mono text-[10px] uppercase tracking-[0.16em] text-zinc-500">Role</TableHead>
-                  <TableHead className="font-mono text-[10px] uppercase tracking-[0.16em] text-zinc-500">Status</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {users.map((user) => (
-                  <TableRow key={user.user_id} className="border-zinc-900/10">
-                    <TableCell className="font-medium text-zinc-800">{user.full_name}</TableCell>
-                    <TableCell className="text-zinc-500">{user.email}</TableCell>
-                    <TableCell>
-                      <select
-                        defaultValue={user.role}
-                        aria-label={`Role for ${user.full_name}`}
-                        className="rounded-full border border-zinc-300 bg-white px-3 py-2 text-xs font-mono uppercase focus:border-zinc-900 focus:outline-none"
-                        onChange={(event) => {
-                          updateUser(user.user_id, { role: event.target.value as "user" | "admin" });
-                        }}
-                      >
-                        <option value="user">User</option>
-                        <option value="admin">Admin</option>
-                      </select>
-                    </TableCell>
-                    <TableCell>
-                      <select
-                        defaultValue={user.account_status}
-                        aria-label={`Account status for ${user.full_name}`}
-                        className="rounded-full border border-zinc-300 bg-white px-3 py-2 text-xs font-mono uppercase focus:border-zinc-900 focus:outline-none"
-                        onChange={(event) => {
-                          updateUser(user.user_id, {
-                            accountStatus: event.target.value as "active" | "inactive" | "suspended"
-                          });
-                        }}
-                      >
-                        <option value="active">Active</option>
-                        <option value="inactive">Inactive</option>
-                        <option value="suspended">Suspended</option>
-                      </select>
-                    </TableCell>
+          <div>
+            <div className="w-full overflow-x-auto">
+              <Table>
+                <TableHeader>
+                  <TableRow className="border-zinc-900/10">
+                    <TableHead className="font-mono text-[10px] uppercase tracking-[0.16em] text-zinc-500">Name</TableHead>
+                    <TableHead className="font-mono text-[10px] uppercase tracking-[0.16em] text-zinc-500">Email</TableHead>
+                    <TableHead className="font-mono text-[10px] uppercase tracking-[0.16em] text-zinc-500">Role</TableHead>
+                    <TableHead className="font-mono text-[10px] uppercase tracking-[0.16em] text-zinc-500">Status</TableHead>
                   </TableRow>
-                ))}
-              </TableBody>
-            </Table>
+                </TableHeader>
+                <TableBody>
+                  {users.map((user) => (
+                    <TableRow key={user.user_id} className="border-zinc-900/10">
+                      <TableCell className="font-medium text-zinc-800">{user.full_name}</TableCell>
+                      <TableCell className="text-zinc-500">{user.email}</TableCell>
+                      <TableCell>
+                        <select
+                          value={user.role}
+                          aria-label={`Role for ${user.full_name}`}
+                          className="rounded-full border border-zinc-300 bg-white px-3 py-2 text-xs font-mono uppercase focus:border-zinc-900 focus:outline-none"
+                          onChange={(event) => {
+                            updateUser(user.user_id, { role: event.target.value as "user" | "admin" });
+                          }}
+                        >
+                          <option value="user">User</option>
+                          <option value="admin">Admin</option>
+                        </select>
+                      </TableCell>
+                      <TableCell>
+                        <select
+                          value={user.account_status}
+                          aria-label={`Account status for ${user.full_name}`}
+                          className="rounded-full border border-zinc-300 bg-white px-3 py-2 text-xs font-mono uppercase focus:border-zinc-900 focus:outline-none"
+                          onChange={(event) => {
+                            updateUser(user.user_id, {
+                              accountStatus: event.target.value as "active" | "inactive" | "suspended"
+                            });
+                          }}
+                        >
+                          <option value="active">Active</option>
+                          <option value="inactive">Inactive</option>
+                          <option value="suspended">Suspended</option>
+                        </select>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+            {usersMeta.totalPages > 1 ? (
+              <div className="mt-4 flex items-center justify-between gap-3">
+                <button
+                  type="button"
+                  onClick={() => setUsersPage((previous) => Math.max(previous - 1, 1))}
+                  disabled={usersMeta.page <= 1}
+                  className="inline-flex h-10 items-center justify-center rounded-full border border-zinc-900/12 bg-white px-4 font-mono text-[11px] uppercase tracking-[0.16em] text-zinc-900 transition-colors hover:bg-zinc-50 disabled:cursor-not-allowed disabled:opacity-45"
+                >
+                  Previous
+                </button>
+                <p className="font-mono text-[10px] uppercase tracking-[0.16em] text-zinc-500">
+                  Page {usersMeta.page} of {usersMeta.totalPages}
+                </p>
+                <button
+                  type="button"
+                  onClick={() => setUsersPage((previous) => Math.min(previous + 1, usersMeta.totalPages))}
+                  disabled={!usersMeta.hasMore}
+                  className="inline-flex h-10 items-center justify-center rounded-full border border-zinc-900/12 bg-white px-4 font-mono text-[11px] uppercase tracking-[0.16em] text-zinc-900 transition-colors hover:bg-zinc-50 disabled:cursor-not-allowed disabled:opacity-45"
+                >
+                  Next
+                </button>
+              </div>
+            ) : null}
           </div>
         );
     }

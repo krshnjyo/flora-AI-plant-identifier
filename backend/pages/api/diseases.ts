@@ -32,6 +32,8 @@ type DiseaseListRow = {
   json_file?: string | null;
 };
 
+const MAX_DISEASE_LIST_ROWS = 200;
+
 async function readPublicImageIndex(publicDir: string, publicUrlPrefix: string) {
   try {
     const entries = await fs.readdir(publicDir, { withFileTypes: true });
@@ -109,7 +111,8 @@ export default withMethods(["GET"], async function handler(req: NextApiRequest, 
        FROM plant_diseases
        WHERE (? = '' OR disease_name_norm LIKE ? ESCAPE '\\'
           OR (? <> '' AND MATCH(disease_name, affected_species, disease_description, symptoms, causes) AGAINST (? IN BOOLEAN MODE)))
-       ORDER BY disease_name ASC`,
+       ORDER BY disease_name ASC
+       LIMIT ${MAX_DISEASE_LIST_ROWS}`,
       [search, searchPattern, fullTextQuery, fullTextQuery]
     );
 
@@ -132,7 +135,8 @@ export default withMethods(["GET"], async function handler(req: NextApiRequest, 
 
     const merged = Array.from(byName.values())
       .filter((item) => (search ? item.disease_name.toLowerCase().includes(search) : true))
-      .sort((a, b) => a.disease_name.localeCompare(b.disease_name));
+      .sort((a, b) => a.disease_name.localeCompare(b.disease_name))
+      .slice(0, MAX_DISEASE_LIST_ROWS);
 
     const payload = merged.map((item) => ({
       disease_id: item.disease_id,
@@ -149,7 +153,8 @@ export default withMethods(["GET"], async function handler(req: NextApiRequest, 
 
   const localRows = catalogRows
     .filter((item) => (search ? item.disease_name.toLowerCase().includes(search) : true))
-    .sort((a, b) => a.disease_name.localeCompare(b.disease_name));
+    .sort((a, b) => a.disease_name.localeCompare(b.disease_name))
+    .slice(0, MAX_DISEASE_LIST_ROWS);
 
   const payload = localRows.map((item) => ({
     disease_id: item.disease_id,

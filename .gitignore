@@ -9,6 +9,8 @@ dist
 **/tsconfig.tsbuildinfo
 backend/public/uploads/*
 !backend/public/uploads/.gitkeep
+backend/public/profiles/*
+!backend/public/profiles/.gitkeep
 plant_ai/venv/
 plant_ai/dataset/
 plant_ai/test_images/

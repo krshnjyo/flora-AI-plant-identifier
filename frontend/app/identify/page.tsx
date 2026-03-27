@@ -27,6 +27,13 @@ type SmartChoice = {
   diseaseName: string;
 };
 
+const RETRYABLE_IDENTIFY_ERROR_CODES = new Set([
+  "RETRY_WITH_LEAF",
+  "LOW_CONFIDENCE_RETRY",
+  "UNCERTAIN_CATALOG_MATCH",
+  "IDENTIFICATION_EMPTY"
+]);
+
 export default function IdentifyPage() {
   const router = useRouter();
   const fileRef = useRef<HTMLInputElement>(null);
@@ -93,31 +100,52 @@ export default function IdentifyPage() {
         plant_name?: string | null;
         disease_name?: string | null;
         has_both?: boolean;
+        message?: string;
+        unresolved_disease_detected?: boolean;
       }>("/api/identify", {
         method: "POST",
         body: formData
       });
 
       if (!response.ok || !json?.success) {
-        setError(getApiErrorMessage(json, "Identification failed"));
+        const apiErrorCode = String((json as { error?: { code?: string } } | null)?.error?.code || "");
+        const apiErrorMessage = getApiErrorMessage(json, "Identification failed");
+        if (response.status === 422 && RETRYABLE_IDENTIFY_ERROR_CODES.has(apiErrorCode)) {
+          setMessage(apiErrorMessage);
+          return;
+        }
+
+        setError(apiErrorMessage);
         return;
       }
 
+      const unresolvedDiseaseDetected = Boolean(json.data.unresolved_disease_detected);
+      const retryMessage =
+        String(json.data.message || "").trim() ||
+        "Detected disease is not available in the database. Try again with another clear leaf image.";
+
       if (json.data.type === "not_found") {
-        setMessage("Not found in database");
+        setMessage(String(json.data.message || "Not found in database"));
         return;
       }
 
       const identifiedType = String(json.data.type || "");
       const identifiedName = String(json.data.identified_name || "");
       const plantName = String(json.data.plant_name || (identifiedType === "plant" ? identifiedName : ""));
-      const diseaseName = String(json.data.disease_name || (identifiedType === "disease" ? identifiedName : ""));
+      const diseaseName = unresolvedDiseaseDetected
+        ? ""
+        : String(json.data.disease_name || (identifiedType === "disease" ? identifiedName : ""));
       const hasDisease = diseaseName.length > 0;
 
       if (scanMode === "disease") {
         if (hasDisease) {
           const plantQuery = plantName ? `?plant=${encodeURIComponent(plantName)}` : "";
           navigateWithFloraTransition(router, `/results/disease/${encodeURIComponent(diseaseName)}${plantQuery}`);
+          return;
+        }
+
+        if (unresolvedDiseaseDetected) {
+          setMessage(retryMessage);
           return;
         }
 

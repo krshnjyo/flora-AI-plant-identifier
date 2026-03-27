@@ -10,7 +10,7 @@
  * - Designed for reuse by multiple features to enforce single-source behavior
  */
 
-const API_BASE_ENV = (process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:4000").replace(/\/$/, "");
+const API_BASE_ENV = String(process.env.NEXT_PUBLIC_API_BASE_URL || "").trim().replace(/\/$/, "");
 const AUTH_EVENT = "flora-auth-change";
 const DEFAULT_TIMEOUT_MS = 15_000;
 
@@ -50,16 +50,52 @@ function dedupeBases(bases: string[]) {
   return out;
 }
 
+function canUseLocalFallbacks() {
+  if (typeof window === "undefined") {
+    return process.env.NODE_ENV !== "production";
+  }
+
+  const hostname = window.location.hostname;
+  return hostname === "localhost" || hostname === "127.0.0.1";
+}
+
+function isLoopbackBase(base: string) {
+  try {
+    const hostname = new URL(base).hostname;
+    return hostname === "localhost" || hostname === "127.0.0.1";
+  } catch {
+    return false;
+  }
+}
+
+function resolveConfiguredApiBase() {
+  if (!API_BASE_ENV) {
+    return "";
+  }
+
+  if (typeof window !== "undefined" && !canUseLocalFallbacks() && isLoopbackBase(API_BASE_ENV)) {
+    return "";
+  }
+
+  return API_BASE_ENV;
+}
+
 function resolveApiBases() {
+  const configuredApiBase = resolveConfiguredApiBase();
   const fromWindow: string[] = [];
-  if (typeof window !== "undefined") {
+  if (typeof window !== "undefined" && canUseLocalFallbacks()) {
     const hostname = window.location.hostname;
     if (hostname) {
       fromWindow.push(`http://${hostname}:4000`);
     }
   }
 
-  return dedupeBases([preferredApiBase || "", ...fromWindow, API_BASE_ENV, ...LOCAL_FALLBACK_BASES]);
+  return dedupeBases([
+    configuredApiBase,
+    preferredApiBase || "",
+    ...fromWindow,
+    ...(canUseLocalFallbacks() ? LOCAL_FALLBACK_BASES : [])
+  ]);
 }
 
 export function getApiErrorMessage<T>(payload: ApiResponseShape<T> | null, fallback: string) {
@@ -71,7 +107,10 @@ export function getApiErrorMessage<T>(payload: ApiResponseShape<T> | null, fallb
 
 export function apiUrl(path: string, base?: string) {
   const normalized = normalizePath(path);
-  const resolvedBase = (base || resolveApiBases()[0] || API_BASE_ENV).replace(/\/$/, "");
+  const resolvedBase = (base || resolveConfiguredApiBase() || resolveApiBases()[0] || "").replace(/\/$/, "");
+  if (!resolvedBase) {
+    throw new Error("NEXT_PUBLIC_API_BASE_URL is required for backend asset URLs in this environment.");
+  }
   return `${resolvedBase}${normalized}`;
 }
 
@@ -109,6 +148,10 @@ export async function apiFetch(path: string, init: RequestInit = {}) {
   const normalized = normalizePath(path);
   const bases = resolveApiBases();
   let lastError: unknown = null;
+
+  if (bases.length === 0) {
+    throw new Error("NEXT_PUBLIC_API_BASE_URL is required for API requests in this environment.");
+  }
 
   for (const base of bases) {
     try {
