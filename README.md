@@ -6,7 +6,7 @@ It includes:
 - a Next.js frontend (`frontend/`) for user and admin workflows
 - a Next.js backend (`backend/`) for API routes
 - a Python inference service (`plant_ai/`) serving `/predict`
-- MySQL for users, catalog, relations, and scan history
+- PostgreSQL for users, catalog, relations, and scan history
 - JSON catalogs as a resilient fallback data source
 
 ## About The Project
@@ -52,7 +52,7 @@ Backend API (Next.js Pages API, port 4000)
    | \
    |  \--> Local Model Service (`/predict`)
    |
-   +--> MySQL (users, plants, diseases, history, telemetry)
+   +--> PostgreSQL / Neon (users, plants, diseases, history, telemetry)
    |
    +--> Local JSON Catalog (backend/data/*) as fallback
    |
@@ -86,14 +86,33 @@ flora/
 
 ## Tech Stack
 
-- Node.js 18+
+- Node.js 22
 - npm
-- Next.js 14
+- Next.js 15
 - TypeScript
-- MySQL 8+
+- PostgreSQL / Neon
 - Optional:
-  - Local Python model service (Flask + TensorFlow, Python 3.10/3.11)
+  - Python model service (Flask + TensorFlow, Python 3.10/3.11)
   - Upstash Redis REST
+
+## Production Deployment
+
+The current production shape is:
+
+- frontend: Vercel
+- backend API: Render
+- model service: Render
+- database: Neon PostgreSQL
+
+Important production notes:
+
+- The frontend proxies `/api/*` and backend-served assets through Vercel rewrites so browser auth stays same-origin on the frontend host.
+- The backend must allow the exact frontend origin in `CORS_ORIGIN`.
+- Cross-site auth cookies require `AUTH_COOKIE_SAMESITE=none` when frontend and backend are on different domains.
+- The model service must be awake for `/api/identify` to work. On sleeping Render plans, first requests after idle can fail with `502`, `503`, or `hibernate-wake-error`.
+- For reliable identify traffic, use an always-on Render plan for the model service.
+
+See also: [`DEPLOYMENT.md`](./DEPLOYMENT.md)
 
 ## Model Scope (Important)
 
@@ -155,19 +174,16 @@ NEXT_PUBLIC_API_BASE_URL=http://localhost:4000
 Create `backend/.env.local`:
 
 ```env
-DB_HOST=127.0.0.1
-DB_USER=root
-DB_PASSWORD=
-DB_NAME=flora
+DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:5432/flora
 JWT_SECRET=replace-with-a-long-random-secret
-CORS_ORIGIN=http://localhost:3000
+CORS_ORIGIN=http://localhost:3000,http://127.0.0.1:3000
 LOCAL_MODEL_ENDPOINT=http://127.0.0.1:5050/predict
+AUTH_COOKIE_SAMESITE=lax
 
 # Optional (Redis-backed cache/rate limit)
 UPSTASH_REDIS_REST_URL=
 UPSTASH_REDIS_REST_TOKEN=
 ```
-- add your frontend origins (for example `http://localhost:3000` and `http://127.0.0.1:3000`) to the OAuth client's Authorized JavaScript origins
 
 Generate a strong JWT secret if needed:
 
@@ -175,18 +191,18 @@ Generate a strong JWT secret if needed:
 openssl rand -hex 32
 ```
 
-### 3. Start MySQL
+### 3. Start PostgreSQL
 
-Use local MySQL or Docker.
+Use local PostgreSQL or Docker.
 
 Docker example:
 
 ```bash
-docker run --name flora-mysql \
-  -e MYSQL_ROOT_PASSWORD=root \
-  -e MYSQL_DATABASE=flora \
-  -p 3306:3306 \
-  -d mysql:8
+docker run --name flora-postgres \
+  -e POSTGRES_PASSWORD=postgres \
+  -e POSTGRES_DB=flora \
+  -p 5432:5432 \
+  -d postgres:16
 ```
 
 ### 4. Initialize Database Schema
@@ -194,22 +210,22 @@ docker run --name flora-mysql \
 Run:
 
 ```bash
-mysql -u root -p < backend/database/schema.sql
+psql "postgresql://postgres:postgres@127.0.0.1:5432/flora" -f backend/database/schema.pg.sql
 ```
 
-If using Docker credentials from above:
+If using Neon, use your Neon connection string instead:
 
 ```bash
-mysql -h 127.0.0.1 -P 3306 -u root -proot < backend/database/schema.sql
+psql "$DATABASE_URL" -f backend/database/schema.pg.sql
 ```
 
 This creates:
 - core tables (`users`, `plants`, `plant_diseases`, `scan_history`, etc.)
 - relation and alias tables
 - admin audit and request telemetry tables
-- required stored procedures used by admin APIs
+- PostgreSQL functions used by admin APIs when present
 
-### 5. Sync JSON Catalog Into MySQL
+### 5. Sync JSON Catalog Into PostgreSQL
 
 Run:
 
@@ -266,11 +282,13 @@ curl -X POST http://localhost:4000/api/auth/register \
   -d '{"fullName":"Admin User","email":"admin@example.com","password":"password123"}'
 ```
 
-Promote this user in MySQL:
+Promote this user in PostgreSQL / Neon:
 
 ```sql
 UPDATE users SET role = 'admin' WHERE email = 'admin@example.com';
 ```
+
+Then log out and log back in so the updated role is reflected in a fresh auth token.
 
 ### 8. Smoke Test Key Flows
 
@@ -322,6 +340,7 @@ curl -X POST http://localhost:4000/api/identify \
 - JWT stored in HTTP-only cookie (`flora_token`).
 - `requireUser` protects authenticated routes (example: `/api/history`).
 - `requireAdmin` protects admin routes (example: `/api/admin/*`).
+- In production, Vercel rewrites keep browser auth requests same-origin while forwarding them to the Render backend.
 
 ### Telemetry And Audit
 
@@ -473,9 +492,9 @@ npm --prefix frontend run lint
 npm --prefix frontend run typecheck
 ```
 
-## Stored Procedures Required By Admin APIs
+## PostgreSQL Functions Used By Admin APIs
 
-Defined in `backend/database/schema.sql`:
+Defined in `backend/database/schema.pg.sql`:
 - `sp_upsert_plant`
 - `sp_delete_plant`
 - `sp_upsert_disease`
@@ -485,22 +504,29 @@ Defined in `backend/database/schema.sql`:
 - `sp_update_user_role_status`
 - `sp_delete_user`
 
-If these are missing or outdated, admin mutations will fail.
+If these are missing or outdated, admin mutations fall back to direct SQL for the core update/delete paths.
 
 ## Troubleshooting
 
 - `IDENTIFICATION_FAILED`:
-  - ensure local model service is running and `LOCAL_MODEL_ENDPOINT` is reachable.
+  - ensure the model service is running and `LOCAL_MODEL_ENDPOINT` is reachable.
+  - check `https://<model-service>/health`.
+  - if Render returns `hibernate-wake-error`, the model service is sleeping and needs time to wake or an always-on plan.
 - `RETRY_WITH_LEAF`:
   - upload a close, clear leaf photo (not fruit/tuber/whole-plant scene).
   - if too strict, lower `MIN_LEAF_LIKELIHOOD` when starting model service (for example `0.01`).
 - Potato image predicted as tomato:
   - this usually means the image is out-of-domain (non-leaf) or low-quality for disease-style leaf classification.
 - CORS issues:
-  - ensure `CORS_ORIGIN` includes `http://localhost:3000`.
+  - ensure `CORS_ORIGIN` exactly matches the frontend origin.
+- Auth works locally but not on Vercel/Render:
+  - set backend `AUTH_COOKIE_SAMESITE=none`.
+  - keep frontend requests same-origin via the Vercel rewrites in `frontend/next.config.mjs`.
 - DB connection errors:
-  - verify MySQL is running and `DB_*` values are correct.
+  - verify PostgreSQL / Neon is reachable and `DATABASE_URL` is correct.
 - Empty gallery/disease list:
   - run `npm --prefix backend run db:sync`.
-- Admin procedure errors:
-  - re-run `backend/database/schema.sql`.
+- Admin role missing:
+  - run `UPDATE users SET role = 'admin' WHERE email = '<your-email>';` in Neon / PostgreSQL.
+- Admin function errors:
+  - re-run `backend/database/schema.pg.sql`.
