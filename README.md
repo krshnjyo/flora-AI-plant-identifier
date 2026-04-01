@@ -1,151 +1,294 @@
 # Flora
 
-Flora is a full-stack plant intelligence platform that identifies plant species and likely diseases from images, then presents treatment and care information through a web interface.
+Flora is a full-stack plant intelligence application that takes a plant image, runs local ML inference, resolves the result against a structured catalog, and opens detailed plant or disease pages for the user.
 
-It includes:
-- a Next.js frontend (`frontend/`) for user and admin workflows
-- a Next.js backend (`backend/`) for API routes
-- a Python inference service (`plant_ai/`) serving `/predict`
-- PostgreSQL for users, catalog, relations, and scan history
-- JSON catalogs as a resilient fallback data source
+This repository is a small monorepo with three cooperating parts:
 
-## About The Project
+- `frontend/`: Next.js App Router UI
+- `backend/`: Next.js Pages API
+- `plant_ai/`: Flask + TensorFlow model service
 
-### What Flora Solves
+## Project Summary
 
-- Accepts a plant **leaf** image upload and returns plant or disease results.
-- Keeps a structured plant and disease knowledge base.
-- Supports user auth, scan history, and admin catalog management.
-- Stays available even when DB lookups fail by falling back to local JSON catalog files.
+Flora is more than an image classifier. It combines:
 
-### Core Capabilities
+- image upload and prediction
+- catalog-backed plant and disease browsing
+- result pages with structured care or pathology content
+- user accounts and scan history
+- admin CRUD and relation management
+- PostgreSQL persistence with JSON fallback for public catalog flows
 
-- Image-based identification (`/api/identify`) via local model service (`plant_ai/model_service/app.py`)
-- Leaf-likelihood guard in model service to reject likely non-leaf images with a retry message.
-- Plant and disease browsing:
-  - `/gallery`
-  - `/disease-gallery`
-- Full result pages:
-  - `/results/plant/:name`
-  - `/results/disease/:name`
-- Admin CRUD and relation management:
-  - plants
-  - diseases
-  - plant-disease links
-  - catalog sync
-- Security and operations:
-  - cookie-based JWT auth
-  - role guards (`user`, `admin`)
-  - rate limiting with Redis or in-memory fallback
-  - admin audit logs + API telemetry
+In practice, Flora behaves like a catalog application with an ML-powered entry point into that catalog.
 
-## Architecture Overview
+## What Problem Flora Solves
 
-```text
-User Browser
-   |
-   v
-Frontend (Next.js App Router, port 3000)
-   |
-   v
-Backend API (Next.js Pages API, port 4000)
-   | \
-   |  \--> Local Model Service (`/predict`)
-   |
-   +--> PostgreSQL / Neon (users, plants, diseases, history, telemetry)
-   |
-   +--> Local JSON Catalog (backend/data/*) as fallback
-   |
-   +--> Optional Redis REST (rate limit + short cache)
+The project is designed to help a user:
+
+1. upload a plant image
+2. infer a likely plant or disease
+3. map that inference to a structured catalog record
+4. read care, risk, treatment, and descriptive information in a clean UI
+
+The backend protects the experience with extra logic the raw model does not provide on its own:
+
+- leaf-likelihood rejection for obvious non-leaf photos
+- confidence thresholds before direct routing
+- plant and disease name normalization
+- DB resolution with local JSON fallback
+- history persistence for authenticated users
+
+## Current Scope
+
+### Seeded catalog in this repository
+
+The versioned JSON catalog currently includes:
+
+- Plants: `Potato`, `Tomato`, `Pepper`
+- Diseases: `Early Blight`, `Late Blight`, `Bacterial Spot`
+
+### Model scope
+
+The ML model in `plant_ai/plant_model.h5` is a closed-set leaf-disease classifier. It is strongest when the input image is a clear close-up of a leaf.
+
+This is important:
+
+- Flora is not a general-purpose plant-recognition system
+- out-of-domain images can be rejected before routing
+- some model outputs can be broader than the currently seeded catalog
+- unsupported detections may end in retry or unresolved-result messaging
+
+## Architecture
+
+### Component view
+
+```mermaid
+classDiagram
+    class FrontendApp {
+      Next.js App Router
+      Public pages
+      Auth pages
+      History and settings
+      Admin workspace
+    }
+
+    class BackendAPI {
+      Next.js Pages API
+      JWT auth
+      Upload handling
+      Resolver logic
+      Admin CRUD
+      Audit and telemetry
+    }
+
+    class ModelService {
+      Flask API
+      GET /health
+      POST /predict
+      TensorFlow model loading
+      Leaf-likelihood heuristic
+    }
+
+    class PostgreSQL {
+      users
+      user_profiles
+      plants
+      plant_diseases
+      scan_history
+      audit and telemetry
+    }
+
+    class JsonCatalog {
+      Plant JSON files
+      Disease JSON files
+      Media metadata
+      Git-tracked seed source
+    }
+
+    class RedisOptional {
+      Rate limiting
+      Short-lived cache
+    }
+
+    FrontendApp --> BackendAPI : /api/* and proxied assets
+    BackendAPI --> ModelService : POST /predict
+    BackendAPI --> PostgreSQL : reads and writes
+    BackendAPI --> JsonCatalog : fallback and sync source
+    BackendAPI --> RedisOptional : cache and rate limit
 ```
 
-## Monorepo Structure
+### Identify request sequence
+
+```mermaid
+sequenceDiagram
+    actor User
+    participant FE as Frontend
+    participant BE as Backend /api/identify
+    participant ML as Model Service /predict
+    participant DB as PostgreSQL
+    participant JSON as Local JSON Catalog
+
+    User->>FE: Upload image and choose mode
+    FE->>BE: POST /api/identify
+    BE->>BE: Rate limit and save upload
+    BE->>ML: Forward image for inference
+    ML-->>BE: class, confidence, plant and disease hints
+    BE->>BE: Apply retry and confidence rules
+    BE->>DB: Resolve against DB when available
+    alt DB unavailable or unresolved
+        BE->>JSON: Resolve against local catalog
+    end
+    BE->>DB: Save scan history for logged-in user
+    BE-->>FE: Canonical result payload
+    FE-->>User: Open plant page, disease page, or retry guidance
+```
+
+## Monorepo Layout
 
 ```text
 flora/
 ├── frontend/
-│   ├── app/                  # App Router pages
-│   ├── components/           # Shared UI/animation components
-│   └── lib/                  # API client + frontend helpers
+│   ├── app/                    # App Router pages and one local API route
+│   ├── components/             # Shared UI, layout, animation
+│   ├── lib/                    # API client and frontend utilities
+│   └── public/                 # Static frontend assets
 ├── backend/
-│   ├── pages/api/            # API routes
-│   ├── lib/                  # DB/auth/upload/resolvers/utilities
-│   ├── data/                 # Plant + disease JSON catalogs
-│   ├── public/               # Uploaded images + static assets
-│   ├── database/schema.sql   # Tables + procedures
-│   ├── scripts/sync-catalog.mjs
-│   └── tests/                # Node test suites
+│   ├── pages/api/              # API routes
+│   ├── lib/                    # Auth, DB, upload, cache, resolver helpers
+│   ├── data/                   # Plant and disease JSON catalog
+│   ├── database/               # PostgreSQL schema
+│   ├── public/                 # Uploaded files and catalog images
+│   ├── scripts/                # Catalog sync tooling
+│   └── tests/                  # Backend tests
 ├── plant_ai/
-│   ├── model_service/app.py  # Flask inference API (`/predict`)
-│   ├── plant_model.h5         # Trained TensorFlow model
-│   ├── run_model.sh           # Model service launcher (Python version guard)
-│   ├── install_model_deps.sh  # Dependency installer (Python version guard)
-│   └── requirements.txt       # Python deps for inference service
+│   ├── model_service/app.py    # Flask inference service
+│   ├── plant_model.h5          # Trained TensorFlow model
+│   ├── run_model.sh            # Local launcher
+│   ├── install_model_deps.sh   # Python dependency installer
+│   └── requirements.txt        # Python dependencies
+├── DEPLOYMENT.md
+├── render.yaml
 └── README.md
 ```
 
-## Tech Stack
+## Frontend Surface
 
-- Node.js 22
+### Main routes
+
+| Route | Purpose |
+| --- | --- |
+| `/` | Minimal landing page and entry into core workflows |
+| `/identify` | Upload image, choose Smart, Plant, or Disease mode, and run detection |
+| `/gallery` | Plant gallery |
+| `/disease-gallery` | Disease gallery |
+| `/results/plant/:name` | Plant detail view |
+| `/results/disease/:name` | Disease detail view |
+| `/history` | Authenticated scan history |
+| `/settings` | Profile, avatar, password, and preferences |
+| `/admin` | Role-gated admin workspace |
+| `/login` | Sign in |
+| `/register` | Create account |
+| `/about` | Product and team overview |
+
+### Frontend runtime notes
+
+- `frontend/lib/api-client.ts` centralizes API requests, timeouts, auth credentials, and asset URL building
+- `frontend/next.config.mjs` rewrites `/api`, `/uploads`, `/profiles`, `/plants`, `/diseases`, and `/gallery-result` to the backend in deployed environments
+- result views intentionally use backend-served media
+- `/api/strip-images` is a small App Router endpoint used by the footer strip
+
+## Backend Surface
+
+### API groups
+
+| Route group | Purpose |
+| --- | --- |
+| `/api/health` | Environment and DB health checks |
+| `/api/auth/register`, `/login`, `/logout`, `/me` | Authentication lifecycle |
+| `/api/account/profile`, `/avatar`, `/password` | User profile management |
+| `/api/plants`, `/api/plant/:name` | Plant listing and detail |
+| `/api/diseases`, `/api/disease/:name` | Disease listing and detail |
+| `/api/identify` | Upload-based inference pipeline |
+| `/api/history` | User scan archive |
+| `/api/admin/*` | Admin stats, users, catalog CRUD, relations, sync |
+
+### Backend behavior that matters
+
+- the backend is the main orchestration layer
+- it merges DB rows with local JSON where needed
+- it stores auth in an HTTP-only JWT cookie named `flora_token`
+- it supports optional Redis REST for cache and rate limiting
+- it records admin audit logs and request telemetry
+
+## Data Model
+
+The PostgreSQL schema in `backend/database/schema.pg.sql` defines the core application model:
+
+- `users`
+- `user_profiles`
+- `plants`
+- `plant_aliases`
+- `plant_diseases`
+- `disease_aliases`
+- `plant_disease_map`
+- `scan_history`
+- `admin_audit_logs`
+- `api_request_telemetry`
+
+### Entity relationship sketch
+
+```mermaid
+erDiagram
+    USERS ||--|| USER_PROFILES : has
+    USERS ||--o{ SCAN_HISTORY : creates
+    USERS ||--o{ ADMIN_AUDIT_LOGS : performs
+    USERS ||--o{ API_REQUEST_TELEMETRY : triggers
+    PLANTS ||--o{ PLANT_ALIASES : has
+    PLANT_DISEASES ||--o{ DISEASE_ALIASES : has
+    PLANTS ||--o{ PLANT_DISEASE_MAP : links
+    PLANT_DISEASES ||--o{ PLANT_DISEASE_MAP : links
+    PLANTS ||--o{ SCAN_HISTORY : resolved_for
+    PLANT_DISEASES ||--o{ SCAN_HISTORY : resolved_for
+```
+
+## Catalog Strategy
+
+Flora uses a hybrid catalog approach:
+
+1. JSON files in `backend/data/` are the Git-tracked seed source
+2. `npm --prefix backend run db:sync` imports that data into PostgreSQL
+3. runtime APIs prefer the database when it is available
+4. public browse flows can still work from local JSON if the DB is missing or down
+
+This hybrid DB + JSON pattern is one of the central architectural ideas in the repository.
+
+## ML Layer
+
+The model service in `plant_ai/model_service/app.py` exposes:
+
+- `GET /health`
+- `POST /predict`
+
+It handles:
+
+- model loading
+- image normalization and resize
+- leaf-likelihood estimation
+- inference over the TensorFlow model
+- response packaging with confidence and class breakdowns
+
+The backend then adds application-aware rules on top of that raw ML output.
+
+## Local Development Setup
+
+### Prerequisites
+
+- Node.js `22.x`
 - npm
-- Next.js 15
-- TypeScript
-- PostgreSQL / Neon
-- Optional:
-  - Python model service (Flask + TensorFlow, Python 3.10/3.11)
-  - Upstash Redis REST
+- PostgreSQL 14+ or Neon
+- Python `3.10` or `3.11`
 
-## Production Deployment
-
-The current production shape is:
-
-- frontend: Vercel
-- backend API: Render
-- model service: Render
-- database: Neon PostgreSQL
-
-Important production notes:
-
-- The frontend proxies `/api/*` and backend-served assets through Vercel rewrites so browser auth stays same-origin on the frontend host.
-- The backend must allow the exact frontend origin in `CORS_ORIGIN`.
-- Cross-site auth cookies require `AUTH_COOKIE_SAMESITE=none` when frontend and backend are on different domains.
-- The model service must be awake for `/api/identify` to work. On sleeping Render plans, first requests after idle can fail with `502`, `503`, or `hibernate-wake-error`.
-- For reliable identify traffic, use an always-on Render plan for the model service.
-
-See also: [`DEPLOYMENT.md`](./DEPLOYMENT.md)
-
-## Model Scope (Important)
-
-The current `plant_ai` model is a **leaf disease classifier**, not a general object classifier.
-
-It recognizes these classes:
-- `Pepper__bell___Bacterial_spot`
-- `Pepper__bell___healthy`
-- `PlantVillage`
-- `Potato___Early_blight`
-- `Potato___Late_blight`
-- `Potato___healthy`
-- `Tomato_Bacterial_spot`
-- `Tomato_Early_blight`
-- `Tomato_Late_blight`
-- `Tomato_Leaf_Mold`
-- `Tomato_Septoria_leaf_spot`
-- `Tomato_Spider_mites_Two_spotted_spider_mite`
-- `Tomato__Target_Spot`
-- `Tomato__Tomato_YellowLeaf__Curl_Virus`
-- `Tomato__Tomato_mosaic_virus`
-- `Tomato_healthy`
-
-Because this is closed-set, non-leaf photos can be misclassified if not guarded.
-To reduce this, the model service returns a retry hint for likely non-leaf images.
-
-## Detailed Setup And Implementation Steps
-
-Follow these steps in order for a clean local implementation.
-
-### 1. Install Dependencies
-
-From repository root:
+### 1. Install dependencies
 
 ```bash
 npm --prefix frontend install
@@ -153,17 +296,7 @@ npm --prefix backend install
 npm run install:model
 ```
 
-`npm run install:model` installs Python dependencies for `plant_ai/model_service/app.py`.
-It auto-selects Python 3.11 or 3.10 and exits with a clear error for unsupported versions.
-If you prefer an isolated Python environment, create one first:
-
-```bash
-python3.11 -m venv .venv-model
-source .venv-model/bin/activate
-python3 -m pip install -r plant_ai/requirements.txt
-```
-
-### 2. Configure Environment Variables
+### 2. Configure environment variables
 
 Create `frontend/.env.local`:
 
@@ -175,27 +308,31 @@ Create `backend/.env.local`:
 
 ```env
 DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:5432/flora
-JWT_SECRET=replace-with-a-long-random-secret
+JWT_SECRET=replace-with-a-long-random-secret-at-least-32-chars
+JWT_ISSUER=flora-api
+JWT_AUDIENCE=flora-client
 CORS_ORIGIN=http://localhost:3000,http://127.0.0.1:3000
 LOCAL_MODEL_ENDPOINT=http://127.0.0.1:5050/predict
 AUTH_COOKIE_SAMESITE=lax
 
-# Optional (Redis-backed cache/rate limit)
+# Optional
+AUTH_COOKIE_DOMAIN=
 UPSTASH_REDIS_REST_URL=
 UPSTASH_REDIS_REST_TOKEN=
 ```
 
-Generate a strong JWT secret if needed:
+Optional model-service settings:
 
-```bash
-openssl rand -hex 32
+```env
+MODEL_PATH=plant_ai/plant_model.h5
+MIN_LEAF_LIKELIHOOD=0.02
 ```
 
 ### 3. Start PostgreSQL
 
-Use local PostgreSQL or Docker.
+You can use local PostgreSQL or Docker.
 
-Docker example:
+Quick Docker example:
 
 ```bash
 docker run --name flora-postgres \
@@ -205,55 +342,19 @@ docker run --name flora-postgres \
   -d postgres:16
 ```
 
-### 4. Initialize Database Schema
-
-Run:
-
-```bash
-psql "postgresql://postgres:postgres@127.0.0.1:5432/flora" -f backend/database/schema.pg.sql
-```
-
-If using Neon, use your Neon connection string instead:
+### 4. Apply schema and sync the catalog
 
 ```bash
 psql "$DATABASE_URL" -f backend/database/schema.pg.sql
-```
-
-This creates:
-- core tables (`users`, `plants`, `plant_diseases`, `scan_history`, etc.)
-- relation and alias tables
-- admin audit and request telemetry tables
-- PostgreSQL functions used by admin APIs when present
-
-### 5. Sync JSON Catalog Into PostgreSQL
-
-Run:
-
-```bash
 npm --prefix backend run db:sync
 ```
 
-What this does:
-- reads `backend/data/plants/*.json`
-- reads `backend/data/diseases/*.json`
-- upserts `plants`
-- upserts `plant_diseases`
-- links `plant_disease_map`
-- generates aliases in `plant_aliases` and `disease_aliases`
-- ensures missing schema/index/constraint compatibility where needed
-
-### 6. Start Model Service, Backend, And Frontend
+### 5. Start the three runtimes
 
 Terminal 1:
 
 ```bash
 npm run dev:model
-```
-
-Optional: tune leaf guard threshold when starting model service:
-
-```bash
-MIN_LEAF_LIKELIHOOD=0.02 npm run dev:model
 ```
 
 Terminal 2:
@@ -268,265 +369,97 @@ Terminal 3:
 npm run dev:frontend
 ```
 
-Open:
-- frontend: `http://localhost:3000`
-- backend: `http://localhost:4000`
+### Local addresses
 
-### 7. Create First User And Promote Admin
+- frontend: `http://127.0.0.1:3000`
+- backend: `http://127.0.0.1:4000`
+- model service: `http://127.0.0.1:5050`
 
-Register through UI (`/register`) or API:
+## Useful Scripts
+
+### Repository root
+
+| Command | Purpose |
+| --- | --- |
+| `npm run dev:frontend` | Start frontend dev server |
+| `npm run dev:backend` | Start backend dev server |
+| `npm run dev:model` | Start model service |
+| `npm run install:model` | Install Python model dependencies |
+| `npm run build:frontend` | Build frontend |
+| `npm run build:backend` | Build backend |
+
+### Backend
+
+| Command | Purpose |
+| --- | --- |
+| `npm --prefix backend run test` | Run backend tests |
+| `npm --prefix backend run typecheck` | Type-check backend |
+| `npm --prefix backend run db:sync` | Sync JSON catalog into PostgreSQL |
+
+### Frontend
+
+| Command | Purpose |
+| --- | --- |
+| `npm --prefix frontend run typecheck` | Type-check frontend |
+| `npm --prefix frontend run build` | Production build |
+
+## Quick Smoke Tests
+
+Once everything is running, these are the fastest sanity checks:
 
 ```bash
-curl -X POST http://localhost:4000/api/auth/register \
-  -H "Content-Type: application/json" \
-  -d '{"fullName":"Admin User","email":"admin@example.com","password":"password123"}'
+curl http://127.0.0.1:4000/api/health
+curl http://127.0.0.1:5050/health
+curl http://127.0.0.1:4000/api/plants
+curl http://127.0.0.1:4000/api/diseases
 ```
 
-Promote this user in PostgreSQL / Neon:
-
-```sql
-UPDATE users SET role = 'admin' WHERE email = 'admin@example.com';
-```
-
-Then log out and log back in so the updated role is reflected in a fresh auth token.
-
-### 8. Smoke Test Key Flows
-
-Plant list:
+For identify:
 
 ```bash
-curl http://localhost:4000/api/plants
-```
-
-Disease list:
-
-```bash
-curl http://localhost:4000/api/diseases
-```
-
-Identify upload:
-
-```bash
-curl -X POST http://localhost:4000/api/identify \
+curl -X POST http://127.0.0.1:4000/api/identify \
   -F "image=@/absolute/path/to/leaf.jpg" \
   -F "output_mode=smart"
 ```
 
-## How The Project Works Internally
+## Deployment Shape
 
-### Identification Flow (`POST /api/identify`)
+The repository is currently set up for:
 
-1. Frontend uploads `multipart/form-data` with:
-   - `image` (JPG/PNG/WEBP, max 5MB)
-   - `output_mode` (`smart`, `plant`, `disease`)
-2. Backend applies rate limiting.
-3. Image is saved in `backend/public/uploads`.
-4. Backend calls the local model service (`LOCAL_MODEL_ENDPOINT`) for class + confidence output.
-5. Model service computes `leaf_likelihood` and may return `needs_retry=true` for likely non-leaf images.
-6. If `needs_retry=true`, backend returns `RETRY_WITH_LEAF` (HTTP 422) so UI asks user to upload a clearer leaf image.
-7. Otherwise resolver logic maps model output to canonical DB/catalog entries.
-8. Decision engine selects response entity type (`plant`, `disease`, or `not_found`).
-9. Scan event is stored in `scan_history`.
-10. API returns structured response envelope with resolved names and metadata.
+- frontend on Vercel
+- backend API on Render
+- model service on Render
+- PostgreSQL on Neon
 
-### Catalog Query Strategy
+Important deployment details:
 
-- `/api/plants` and `/api/diseases` are DB-first.
-- If DB is unavailable or missing rows, APIs fallback to local JSON catalog.
-- Responses are cached short-term (Redis if configured, else in-memory).
+- the frontend uses rewrites so browser auth can stay same-origin
+- the backend must allow the frontend origin in `CORS_ORIGIN`
+- cross-site deployments usually require `AUTH_COOKIE_SAMESITE=none`
+- cold starts on the model service can affect `/api/identify`
 
-### Auth And Access Control
+See [`DEPLOYMENT.md`](./DEPLOYMENT.md) for deployment-specific instructions.
 
-- JWT stored in HTTP-only cookie (`flora_token`).
-- `requireUser` protects authenticated routes (example: `/api/history`).
-- `requireAdmin` protects admin routes (example: `/api/admin/*`).
-- In production, Vercel rewrites keep browser auth requests same-origin while forwarding them to the Render backend.
+## Known Limitations
 
-### Telemetry And Audit
+- The model is closed-set and leaf-focused.
+- The richest repository-backed catalog coverage is currently for Potato, Tomato, Pepper, and three disease records.
+- Some uploaded-file storage uses `backend/public`, which is simple locally but ephemeral on providers like Render.
+- Public browse flows degrade gracefully via JSON fallback, but auth, admin, and history still depend on a working database.
+- The repository contains backend tests, but not a comparable automated frontend test suite yet.
 
-- API wrapper records per-route request telemetry in `api_request_telemetry`.
-- Admin mutations record audit events in `admin_audit_logs`.
+## Study Guide For New Contributors
 
-## JSON Catalog Contracts (Important)
+If someone wants to understand the repo quickly, this reading order works well:
 
-Validation is enforced by:
-- `backend/lib/plant-json-schema.ts`
-- `backend/lib/disease-json-schema.ts`
+1. `frontend/app/identify/page.tsx`
+2. `backend/pages/api/identify.ts`
+3. `plant_ai/model_service/app.py`
+4. `backend/data/`
+5. `backend/database/schema.pg.sql`
+6. `frontend/app/results/[type]/[name]/page.tsx`
+7. `frontend/app/admin/page.tsx`
 
-At minimum, keep these high-value fields correct:
-- plant JSON:
-  - `common_name`
-  - `scientific_name`
-  - `species`
-  - `plant_description`
-  - `common_diseases`
-  - `confidence_score`
-- disease JSON:
-  - `disease_name`
-  - `affected_species`
-  - `disease_description`
-  - `symptoms`
-  - `causes`
-  - `prevention_methods`
-  - `treatment_methods`
-  - `severity_level`
+## Final Takeaway
 
-If schema validation fails, admin create/update APIs reject payloads.
-
-## Implementation Playbooks
-
-### Add A New Plant Profile
-
-1. Add a valid JSON file in `backend/data/plants/`.
-2. If needed, add matching image in `backend/public/plants/`.
-3. Ensure `image_url` in JSON points to `/plants/<filename>`.
-4. Run:
-
-```bash
-npm --prefix backend run db:sync
-```
-
-5. Verify:
-   - `GET /api/plants`
-   - frontend `/gallery`
-   - `GET /api/plant/<name>`
-
-### Add A New Disease Profile
-
-1. Add a valid JSON file in `backend/data/diseases/`.
-2. Add image in `backend/public/diseases/`.
-3. Ensure JSON `image_url` points to `/diseases/<filename>`.
-4. Run:
-
-```bash
-npm --prefix backend run db:sync
-```
-
-5. Verify:
-   - `GET /api/diseases`
-   - frontend `/disease-gallery`
-   - `GET /api/disease/<name>`
-
-### Add A New Backend API Route
-
-1. Create route under `backend/pages/api/...`.
-2. Wrap handler with `withMethods([...], handler)`.
-3. Validate payloads (prefer Zod).
-4. Return responses via:
-   - `sendSuccess`
-   - `sendError`
-5. If route needs auth:
-   - `requireUser` or `requireAdmin`
-6. Add/adjust tests in `backend/tests/`.
-
-### Add A New Frontend Page
-
-1. Add route in `frontend/app/...`.
-2. Use `apiFetch`/`apiFetchJson` from `frontend/lib/api-client.ts`.
-3. Keep backend response envelope handling (`success` + `error`).
-4. Add navigation links/actions from existing pages.
-5. Test with both success and error API responses.
-
-## Important Routes
-
-Frontend:
-- `/identify`
-- `/gallery`
-- `/disease-gallery`
-- `/results/[type]/[name]`
-- `/history`
-- `/admin`
-- `/login`
-- `/register`
-
-Backend API:
-- `POST /api/identify`
-- `GET /api/plants`
-- `GET /api/diseases`
-- `GET /api/plant/:name`
-- `GET /api/disease/:name`
-- `POST /api/auth/register`
-- `POST /api/auth/login`
-- `POST /api/auth/logout`
-- `GET /api/auth/me`
-- `GET /api/history`
-- `GET|PUT|DELETE /api/admin/users`
-- `POST|PUT|DELETE /api/admin/plant`
-- `POST|PUT|DELETE /api/admin/disease`
-- `POST|DELETE /api/admin/relations`
-- `POST /api/admin/sync-catalog`
-- `GET /api/admin/stats`
-
-## Scripts
-
-Root:
-
-```bash
-npm run install:model
-npm run dev:model
-npm run dev:frontend
-npm run dev:backend
-npm run build:frontend
-npm run build:backend
-```
-
-Backend:
-
-```bash
-npm --prefix backend run dev
-npm --prefix backend run build
-npm --prefix backend run start
-npm --prefix backend run lint
-npm --prefix backend run typecheck
-npm --prefix backend run test
-npm --prefix backend run db:sync
-```
-
-Frontend:
-
-```bash
-npm --prefix frontend run dev
-npm --prefix frontend run build
-npm --prefix frontend run start
-npm --prefix frontend run lint
-npm --prefix frontend run typecheck
-```
-
-## PostgreSQL Functions Used By Admin APIs
-
-Defined in `backend/database/schema.pg.sql`:
-- `sp_upsert_plant`
-- `sp_delete_plant`
-- `sp_upsert_disease`
-- `sp_delete_disease`
-- `sp_link_plant_disease`
-- `sp_unlink_plant_disease`
-- `sp_update_user_role_status`
-- `sp_delete_user`
-
-If these are missing or outdated, admin mutations fall back to direct SQL for the core update/delete paths.
-
-## Troubleshooting
-
-- `IDENTIFICATION_FAILED`:
-  - ensure the model service is running and `LOCAL_MODEL_ENDPOINT` is reachable.
-  - check `https://<model-service>/health`.
-  - if Render returns `hibernate-wake-error`, the model service is sleeping and needs time to wake or an always-on plan.
-- `RETRY_WITH_LEAF`:
-  - upload a close, clear leaf photo (not fruit/tuber/whole-plant scene).
-  - if too strict, lower `MIN_LEAF_LIKELIHOOD` when starting model service (for example `0.01`).
-- Potato image predicted as tomato:
-  - this usually means the image is out-of-domain (non-leaf) or low-quality for disease-style leaf classification.
-- CORS issues:
-  - ensure `CORS_ORIGIN` exactly matches the frontend origin.
-- Auth works locally but not on Vercel/Render:
-  - set backend `AUTH_COOKIE_SAMESITE=none`.
-  - keep frontend requests same-origin via the Vercel rewrites in `frontend/next.config.mjs`.
-- DB connection errors:
-  - verify PostgreSQL / Neon is reachable and `DATABASE_URL` is correct.
-- Empty gallery/disease list:
-  - run `npm --prefix backend run db:sync`.
-- Admin role missing:
-  - run `UPDATE users SET role = 'admin' WHERE email = '<your-email>';` in Neon / PostgreSQL.
-- Admin function errors:
-  - re-run `backend/database/schema.pg.sql`.
+Flora is a catalog-backed plant intelligence system with an ML-assisted entry flow, a PostgreSQL data model, admin tooling, and a resilient JSON fallback strategy. The most important thing to understand about the codebase is that the model is only one piece of the product; the real application value comes from how inference, catalog resolution, persistence, and UI routing are stitched together.

@@ -6,6 +6,7 @@ dist
 .env
 *.log
 .DS_Store
+*.tsbuildinfo
 **/tsconfig.tsbuildinfo
 backend/public/uploads/*
 !backend/public/uploads/.gitkeep
